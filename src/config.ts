@@ -1,32 +1,56 @@
 /**
  * Configuration loader for dsh-ocgo-usage
  *
- * Priority: env vars > config file ($DSH_HOME/ocgo-usage.json) > built-in defaults
+ * The credential is an OpenCode Go **API key** (the same key the model provider
+ * uses), not a browser session cookie: usage is read from `GET {baseUrl}/usage`
+ * with `Authorization: Bearer <key>`.
  *
- * The cookie is NEVER logged. If the config file is missing or unparseable,
- * we silently fall back to env vars + defaults — the browser readout shows a
- * clean `noconfig` error if neither source provides a usable value.
+ * Resolution order for the key:
+ *   1. this plugin's environment variables (`OPENCODE_GO_API_KEY`, then
+ *      `OPENCODE_API_KEY`) — the names double as credentials-seam references;
+ *   2. `$DSH_HOME/ocgo-usage.json`;
+ *   3. the DSH credentials seam (provider-managed store, then `.env`), applied
+ *      by the service when neither of the above supplies a value — see
+ *      `OcgoUsageService`.
  *
- * Env var names match the pi-ocgo-usage extension so one shell profile works
- * for both agents.
+ * The key is NEVER logged.
  *
  * The browser config editor (`/api/ocgo-usage/config`) reads a MASKED view
- * (never the full cookie) and writes back through {@link writeConfigFile}.
+ * (never the full key) and writes back through {@link writeConfigFile}.
  * @module dsh-ocgo-usage/config
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { MaskedConfigView, MaskedSecret, OcgoConfig } from './types.ts'
+import type { ChipVisibility, MaskedSecret, OcgoConfig } from './types.ts'
 
-export const ENV_COOKIE = 'OPENCODE_GO_COOKIE'
-export const ENV_WORKSPACE_ID = 'OPENCODE_GO_WORKSPACE_ID'
+/** Primary environment variable / credentials-seam reference. */
+export const ENV_API_KEY = 'OPENCODE_GO_API_KEY'
+/** Secondary reference, the one dsh-opencode-go defaults to. */
+export const ENV_API_KEY_ALT = 'OPENCODE_API_KEY'
 export const ENV_BASE_URL = 'OPENCODE_GO_BASE_URL'
 export const ENV_CACHE_TTL = 'OPENCODE_GO_CACHE_TTL'
 export const ENV_TIMEOUT_MS = 'OPENCODE_GO_TIMEOUT_MS'
+export const ENV_VISIBILITY = 'OPENCODE_GO_USAGE_VISIBILITY'
 
-export const DEFAULT_BASE_URL = 'https://opencode.ai'
+/** Chip visibility when nothing overrides it. */
+export const DEFAULT_VISIBILITY: ChipVisibility = 'always'
+
+/** The accepted visibility modes, in settings-presentation order. */
+export const VISIBILITY_VALUES: readonly ChipVisibility[] = ['always', 'provider', 'never']
+
+/** Normalize one visibility value; anything unknown selects the default. */
+export function parseVisibility(value: string | undefined): ChipVisibility {
+  return VISIBILITY_VALUES.find((mode) => mode === value) ?? DEFAULT_VISIBILITY
+}
+
+/** Gateway base; `/usage` hangs off it. */
+export const DEFAULT_BASE_URL = 'https://opencode.ai/zen/go/v1'
+
+/** Credential references tried, in order, through the DSH credentials seam. */
+export const DEFAULT_API_KEY_REFS: readonly string[] = [ENV_API_KEY, ENV_API_KEY_ALT]
+
 export const DEFAULT_CACHE_TTL = 300
 export const DEFAULT_TIMEOUT_MS = 10_000
 export const MIN_CACHE_TTL = 60
@@ -45,11 +69,11 @@ export function configFilePath(): string {
 }
 
 interface FileConfig {
-  cookie?: unknown
-  workspaceID?: unknown
+  apiKey?: unknown
   baseUrl?: unknown
   cacheTTL?: unknown
   timeoutMs?: unknown
+  visibility?: unknown
 }
 
 /**
@@ -59,16 +83,13 @@ interface FileConfig {
 export function loadConfig(): OcgoConfig {
   const fileConfig = readFileConfig()
 
-  // Cookie: prefer env, fall back to file; normalize so users can paste
-  // either the full header or just the auth value.
-  const cookie = normalizeCookie(pickString(process.env[ENV_COOKIE], asString(fileConfig?.cookie)))
+  const apiKey = pickString(
+    process.env[ENV_API_KEY],
+    process.env[ENV_API_KEY_ALT],
+    asString(fileConfig?.apiKey),
+  )
 
-  // Workspace ID: prefer env, fall back to file.
-  const workspaceID = pickString(process.env[ENV_WORKSPACE_ID], asString(fileConfig?.workspaceID))
-
-  // baseUrl: prefer env, fall back to file, fall back to default.
-  const baseUrl =
-    pickString(process.env[ENV_BASE_URL], asString(fileConfig?.baseUrl)) || DEFAULT_BASE_URL
+  const rawBase = pickString(process.env[ENV_BASE_URL], asString(fileConfig?.baseUrl)) ?? DEFAULT_BASE_URL
 
   // cacheTTL: clamp into [60, 3600].
   const rawTTL = pickNumber(
@@ -84,7 +105,40 @@ export function loadConfig(): OcgoConfig {
     pickNumber(process.env[ENV_TIMEOUT_MS], asNumber(fileConfig?.timeoutMs), DEFAULT_TIMEOUT_MS),
   )
 
-  return { cookie, workspaceID, baseUrl, cacheTTL, timeoutMs }
+  // visibility: an unknown value selects the default rather than silently
+  // hiding the readout.
+  const visibility = parseVisibility(
+    pickString(process.env[ENV_VISIBILITY], asString(fileConfig?.visibility)),
+  )
+
+  return {
+    apiKey,
+    apiKeyRefs: DEFAULT_API_KEY_REFS,
+    baseUrl: rawBase.replace(/\/+$/, ''),
+    cacheTTL,
+    timeoutMs,
+    visibility,
+  }
+}
+
+/** A locally configured key together with a browser-safe source label. */
+export interface LocalApiKey {
+  /** The key value (never sent to the browser). */
+  readonly key: string
+  /** `environment` or `config`. */
+  readonly source: string
+}
+
+/**
+ * The key configured locally, if any: this plugin's environment variables first
+ * (matching `loadConfig`'s precedence), then the config file.
+ */
+export function loadLocalApiKey(): LocalApiKey | undefined {
+  const fromEnv = pickString(process.env[ENV_API_KEY], process.env[ENV_API_KEY_ALT])
+  if (fromEnv !== undefined) return { key: fromEnv, source: 'environment' }
+  const fromFile = asString(readFileConfig()?.apiKey)
+  if (fromFile !== undefined) return { key: fromFile, source: 'config' }
+  return undefined
 }
 
 /** Mask the last 4 characters of a secret for the browser (full value when ≤ 4 chars). */
@@ -93,49 +147,37 @@ export function maskSecret(value: string | undefined): MaskedSecret {
   return { set: true, tail: value.length <= 4 ? value : value.slice(-4) }
 }
 
-/** The browser-facing masked config view (never reveals the full cookie). */
-export function maskedConfigView(): MaskedConfigView {
-  const cfg = loadConfig()
-  return {
-    workspaceID: maskSecret(cfg.workspaceID),
-    cookie: maskSecret(cfg.cookie),
-  }
-}
-
 /**
- * Write cookie / workspaceID into the config file (preserving any other
- * fields), chmod 600, and return the updated masked view. Values are
- * normalized like env input (cookie gets `auth=` prefixed when pasted bare).
- * Empty/absent fields are left untouched; pass `null` to clear a field.
+ * Write the API key and/or the visibility mode into the config file (preserving
+ * any other fields), chmod 600. Absent fields are left untouched; pass `null` to
+ * clear a field (clearing the key lets the credentials seam supply it again).
+ * @param partial - the fields to write.
+ * @returns the stored API key, or undefined once cleared.
  */
 export function writeConfigFile(partial: {
-  cookie?: string | null
-  workspaceID?: string | null
-}): MaskedConfigView {
+  apiKey?: string | null
+  visibility?: ChipVisibility | null
+}): string | undefined {
   const file = readFileConfig() ?? {}
   const next: Record<string, unknown> = { ...file }
-  if (partial.workspaceID !== undefined) {
-    const v = typeof partial.workspaceID === 'string' ? partial.workspaceID.trim() : ''
-    if (v.length > 0) next.workspaceID = v
-    else delete next.workspaceID
+  if (partial.apiKey !== undefined) {
+    const v = typeof partial.apiKey === 'string' ? partial.apiKey.trim() : ''
+    if (v.length > 0) next.apiKey = v
+    else delete next.apiKey
   }
-  if (partial.cookie !== undefined) {
-    const v = typeof partial.cookie === 'string' ? normalizeCookie(partial.cookie) : undefined
-    if (v !== undefined && v.length > 0) next.cookie = v
-    else delete next.cookie
+  if (partial.visibility !== undefined) {
+    if (partial.visibility === null) delete next.visibility
+    else next.visibility = partial.visibility
   }
   const path = configFilePath()
   try {
     writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 })
   } catch {
-    // Fall back to the env/current effective values rather than throwing to
-    // the browser with a partial write.
-    return maskedConfigView()
+    // Report the effective value rather than throwing a partial write at the
+    // browser.
+    return asString(next.apiKey)
   }
-  return {
-    workspaceID: maskSecret(typeof next.workspaceID === 'string' ? next.workspaceID : undefined),
-    cookie: maskSecret(typeof next.cookie === 'string' ? next.cookie : undefined),
-  }
+  return asString(next.apiKey)
 }
 
 function readFileConfig(): FileConfig | null {
@@ -155,67 +197,11 @@ function readFileConfig(): FileConfig | null {
 
 // --- helpers ---
 
-function pickString(envVal: string | undefined, fileVal: string | undefined): string | undefined {
-  if (envVal && envVal.length > 0) return envVal
-  if (fileVal && fileVal.length > 0) return fileVal
-  return undefined
-}
-
-/**
- * Normalize a user-provided cookie string into a valid `Cookie:` header value
- * for the opencode console HTTP request.
- *
- * Accepts, order-independently:
- *  1. Full header: "auth=Fe26.2*...; oc_locale=zh"   (passthrough)
- *  2. Single bare value: "Fe26.2*..."                (auto-prefix "auth=")
- *  3. Two-segment value+locale: "Fe26.2*...; oc_locale=zh"
- *  4. Locale + auth in any order (incl. `oc_locale=zh` BEFORE `auth=`).
- *
- * The original implementation decided "the first segment is the auth value"
- * whenever the string did not start with `auth=`. That silently corrupted
- * real browser cookies like `oc_locale=zh; desktop_promo_dismissed=1;
- * auth=Fe26.2*...` into `auth=oc_locale=zh; ...` — a fake cookie that
- * opencode.ai rejects with a redirect to the login page.
- *
- * Fixes:
- *  - The `auth=` segment is located anywhere in the string, not assumed to
- *    be first.
- *  - If no `auth=` pair and no bare opaque token is present, `undefined` is
- *    returned so the caller REFUSES to persist a broken cookie rather than
- *    fabricating `auth=<locale>`.
- *  - The `oc_locale` is preserved from the pasted cookie (so a zh user keeps
- *    the Chinese console page, which the parser now supports), defaulting to
- *    `en` when absent. Only a well-formed short locale (e.g. `en`, `zh`, `ja`)
- *    is kept; anything malformed falls back to `en`.
- *  - All other segments (UI prefs like `desktop_promo_dismissed`) are
- *    dropped; only the auth token and the locale are ever sent.
- */
-export function normalizeCookie(input: string | undefined): string | undefined {
-  if (!input) return undefined
-  const trimmed = input.trim()
-  if (!trimmed) return undefined
-
-  const segments = trimmed.split(/[;,]/).map((s) => s.trim()).filter(Boolean)
-
-  // 1) Auth token — order-independent.
-  let auth = segments.find((s) => /^auth=/i.test(s))
-  if (auth === undefined) {
-    // A bare token (no "=") that looks like an opaque auth value.
-    const bare = segments.find((s) => !s.includes('=') && s.length >= 8)
-    if (bare !== undefined) auth = `auth=${bare}`
+function pickString(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    if (value && value.length > 0) return value
   }
-  if (auth === undefined) return undefined
-
-  const authValue = auth.slice(auth.indexOf('=') + 1).trim().replace(/^"|"$/g, '')
-  if (authValue.length === 0) return undefined
-
-  // 2) Locale — preserve the pasted one (the zh parser understands zh pages),
-  //    fall back to `en` when absent or malformed.
-  const localeSeg = segments.find((s) => /^oc_locale=/i.test(s))
-  const rawLocale = localeSeg ? localeSeg.slice(localeSeg.indexOf('=') + 1).trim() : ''
-  const locale = /^[A-Za-z]{2,3}$/.test(rawLocale) ? rawLocale.toLowerCase() : 'en'
-
-  return `auth=${authValue}; oc_locale=${locale}`
+  return undefined
 }
 
 function pickNumber(

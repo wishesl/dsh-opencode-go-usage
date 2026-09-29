@@ -22,13 +22,14 @@ OpenCode Go: 5h 0% (1h 23m) · wk 65% (2d 20h) · mo 83% (6d 21h) · upd 20:15
 - **颜色阈值** —— 正常 → 黄色警告（≥80%）→ 红色错误（≥90% 或已限流）
 - **数据新鲜度** —— `upd HH:MM` 显示最近一次成功抓取时间
 - **轻量轮询** —— 每 10s 轮询（切回标签页立即刷新）；host 端 300s 缓存（TTL 可配）+ 60s 失败冷却，不会频繁打扰 opencode.ai
-- **Provider 感知** —— 仅当会话当前模型走 `opencode-go` provider 时显示；每次轮询读取内存中的实时模型选择（`session.models`，毫秒级），切到 DeepSeek 官方等其它 provider 后一个轮询周期内自动隐藏，切回自动恢复（与 pi-ocgo-usage 行为一致）
-- **点击展开** —— 详情面板显示每个窗口的重置倒计时，左下角 `Set` 可配置凭据，右侧 `refresh upd HH:MM` 手动刷新
-- **内置凭据编辑器** —— 无需碰终端：`Set` 面板直接修改 workspace id 与 cookie（输入框以 `••••` + 末尾 4 位显示，点击外部 / Esc / 保存确认写入）
+- **三档展示方式（设置页可选）** —— `常驻展示用量`（默认：只要解析到 key 就显示，与当前模型无关）/ `使用 opencode-go 才展示`（仅当前模型走 opencode-go provider 时显示）/ `不展示用量`（输入框不显示，设置页仍可查看）。哪里都没有 key 时任何档位都不显示，不在输入框常驻一个报错 chip
+- **判断在 host 侧** —— 显示与否由 host 按模式 + 当前模型选择算出（`agentDefaultModel.currentSelection()`），浏览器不做任何 provider 探测；`provider` 档在探针不可用时 **fail-open**（照常显示），避免因探测失败而静默消失
+- **点击展开** —— 详情面板显示每个窗口的重置倒计时，左下角 `Set` 可编辑 API key，右侧 `refresh upd HH:MM` 手动刷新
+- **内置凭据编辑器** —— 无需碰终端：`Set` / 设置页直接填 API key（输入框以 `••••` + 末尾 4 位显示，点击外部 / Esc / 保存确认写入）
 - **优雅降级** —— 配置缺失显示 `<err:noconfig>`，HTTP 失败显示 `<err:httpXXX>`；出错时点击 chip 直接进入 Set 面板
-- **Cookie 只在 host 侧** —— 浏览器只访问同源 `/api/ocgo-usage` JSON 端点，cookie 永不进入页面
+- **API key 只在 host 侧** —— 浏览器只访问同源 `/api/ocgo-usage` JSON 端点，key 永不进入页面
 
-> **⚠️ 需要 OpenCode Go 会话 cookie。** 该 cookie 是完整用户会话（不是 API key），可访问你 OpenCode 账户的全部内容。请像对待密码一样对待它——见 [配置](#配置)。
+> **取数方式：`GET {baseUrl}/usage` + `Authorization: Bearer <API key>`**（默认 base `https://opencode.ai/zen/go/v1`），与 dsh-opencode-go 读的是同一个端点。**不需要浏览器 cookie**；key 优先取本插件自己的环境变量 / 配置文件，否则回落到 DSH 凭据库，因此已经配好 OpenCode Go 模型 provider 的机器通常零配置即可用。
 
 ## 环境要求
 
@@ -80,27 +81,27 @@ dsh --profile web --dump-config   # 应显示 "# == dsh-ocgo-usage" 层
 
 ## 配置
 
-### 方式一：界面内 Set 面板（最简单）
+### 方式一：什么都不做（推荐）
 
-点击 chip 展开详情 → 左下角 `Set` → 输入 workspace id 与 cookie（已设置的值以 `••••` + 末尾 4 位显示，聚焦即可输入新值）→ 点击外部 / Esc / 保存按钮确认，立即生效。
+只要这台机器已经配好 OpenCode Go 的模型 provider（`llm-pi-ai` 的 `opencode-go`，或 [dsh-opencode-go](https://github.com/Duskriver/dsh-opencode-go)），API key 就已经在 DSH 凭据库里了。插件通过 credentials 服务按引用名 `OPENCODE_GO_API_KEY`、`OPENCODE_API_KEY` 依次解析，命中即用 —— 不需要任何额外配置。
 
-![Set editor](assets/set-cookie-wid.png)
+### 方式二：界面内编辑
 
-### 方式二：环境变量（与 pi-ocgo-usage 同名）
+「设置 → OpenCode Go 用量」页，或点击 chip 展开 → 左下角 `Set`。已设置的值以 `••••` + 末尾 4 位显示，聚焦即可输入新值；`清除` 会删掉本地覆盖，回退到凭据库。
+
+### 方式三：环境变量
 
 ```sh
-export OPENCODE_GO_COOKIE="auth=Fe26.2*...; oc_locale=en"
-export OPENCODE_GO_WORKSPACE_ID="wrk_01XXXXXXXXXXXXXXXXXXXXXXXX"
+export OPENCODE_GO_API_KEY="sk-..."
 ```
 
-### 方式三：配置文件
+### 方式四：配置文件
 
 写入 `$DSH_HOME/ocgo-usage.json`（默认 `~/.dsh/ocgo-usage.json`）：
 
 ```jsonc
 {
-  "cookie": "auth=Fe26.2*...; oc_locale=en",
-  "workspaceID": "wrk_01XXXXXXXXXXXXXXXXXXXXXXXX"
+  "apiKey": "sk-..."
 }
 ```
 
@@ -108,15 +109,24 @@ export OPENCODE_GO_WORKSPACE_ID="wrk_01XXXXXXXXXXXXXXXXXXXXXXXX"
 chmod 600 ~/.dsh/ocgo-usage.json
 ```
 
-优先级：环境变量 > 配置文件 > 内置默认。
+优先级：本插件环境变量 > 配置文件 > DSH 凭据库 > 无（显示 `<err:noconfig>`）。
 
 ### 可选覆盖项
 
 | 环境变量 | 默认值 | 说明 |
 |---|---|---|
-| `OPENCODE_GO_BASE_URL` | `https://opencode.ai` | API 基础地址 |
+| `OPENCODE_GO_BASE_URL` | `https://opencode.ai/zen/go/v1` | API 基础地址（`/usage` 挂在其后） |
 | `OPENCODE_GO_CACHE_TTL` | `300` | host 缓存秒数，范围 60–3600 |
 | `OPENCODE_GO_TIMEOUT_MS` | `10000` | HTTP 超时 |
+| `OPENCODE_GO_USAGE_VISIBILITY` | `always` | 展示档位：`always` / `provider` / `never`（未知值回落 `always`） |
+
+展示档位也可以直接在「设置 → OpenCode Go 用量」里点选，写入 `$DSH_HOME/ocgo-usage.json`：
+
+```jsonc
+{
+  "visibility": "provider"
+}
+```
 
 组合层配置（`~/.dsh/profiles/web/cordis.patch.yml`）：
 
@@ -126,7 +136,7 @@ chmod 600 ~/.dsh/ocgo-usage.json
     enabled: false    # 总开关，默认 true
 ```
 
-> **Cookie 过期：** `auth` cookie 签发后有效期 1 年。过期（或被吊销）后页面 302 跳转到登录页，chip 显示 `<err:http302>` 而非过期数字。重新登录 opencode.ai 后，通过 Set 面板更新 cookie 即可。
+> **key 无效：** key 被吊销或填错时端点返回 401/403，chip 显示 `<err:http401>` 而非过期数字。在「设置 → OpenCode Go 用量」里重新填入即可，无需重启。
 
 ## 使用
 
@@ -136,16 +146,16 @@ chmod 600 ~/.dsh/ocgo-usage.json
 
 ## 工作原理
 
-- **Host 半**（`src/index.ts`、`src/service.ts`、`src/api.ts`、`src/routes.ts`）—— 携带 cookie 抓取 `GET /workspace/<wrk>/go`，解析 SSR 渲染的 `data-slot="usage-item"` 块为每个窗口的 `{percent, resetInSec, status}`，缓存结果，通过同源 JSON 端点 `/api/ocgo-usage`（+ `/api/ocgo-usage/refresh`、`/api/ocgo-usage/config`）提供数据。
-- **浏览器半**（`src/client/`）—— 向 `conversation.composer.dock` slot 注册 chip，每 10s 轮询 host 端点，按严重级别着色渲染三个窗口；可见性来自 `session.models` 的实时 provider 判断。
+- **Host 半**（`src/index.ts`、`src/service.ts`、`src/api.ts`、`src/routes.ts`）—— 按引用名从 DSH 凭据库解析 API key，带 `Authorization: Bearer` 请求 `GET {baseUrl}/usage`，把 `{usage:{rolling,weekly,monthly}}` 校验成 `{percent, resetsAt, status}`，缓存结果，通过同源 JSON 端点 `/api/ocgo-usage`（+ `/api/ocgo-usage/refresh`、`/api/ocgo-usage/config`）提供数据。
+- **浏览器半**（`src/client/`）—— 向 `conversation.input.right` slot 注册 chip，每 10s 轮询 host 端点，按严重级别着色渲染三个窗口；可见性来自 host 的凭据状态。
 
-浏览器永远看不到 cookie；抓取与解析全部在 host 侧完成。
+浏览器永远看不到 API key；解析与请求全部在 host 侧完成。
 
 ## 安全
 
-- `auth` cookie 是**完整的 OpenCode 用户会话**。任何人拿到它都能访问你账户内的所有 workspace、订阅与账单信息。
-- 插件**绝不**记录 cookie、不把它放进错误信息、不发送给浏览器。
-- 配置编辑器只把新值写入 `$DSH_HOME/ocgo-usage.json`（chmod 600），浏览器始终只看到 `••••` + 末尾 4 位的掩码视图。
+- API key 是账号凭据，等同于密码。插件**绝不**记录它、不把它放进错误信息、不发送给浏览器。
+- 本地覆盖只写入 `$DSH_HOME/ocgo-usage.json`（chmod 600）；浏览器始终只看到 `••••` + 末尾 4 位的掩码视图。
+- 通过凭据库供 key 时不落地任何副本，本插件只持有本次请求解析出的值。
 
 ## 开发
 
@@ -163,6 +173,27 @@ pnpm test          # vitest run（解析器 / 配置 / 服务）
 MIT —— 见 [LICENSE](./LICENSE)。
 
 ## Changelog
+
+### v2.1.0 - 改用 API key 直接读用量
+
+**不再需要浏览器 cookie。** 用量改从 `GET {baseUrl}/usage` 读取（`Authorization: Bearer <API key>`），与 [dsh-opencode-go](https://github.com/Duskriver/dsh-opencode-go) 用的是同一个端点：
+
+- API key 按引用名 `OPENCODE_GO_API_KEY` / `OPENCODE_API_KEY` 从 DSH 凭据库解析 —— 已配好 OpenCode Go 模型 provider 的机器零配置即可用
+- 窗口数据变成结构化的 `{status, percent, resetsAt}`；重置倒计时由绝对时间戳推算，不再依赖页面语言，也不需要再解析本地化的 "Resets in / 重置于" 文案
+- 移除 cookie、workspace id 相关的配置、解析与测试；新增「设置 → OpenCode Go 用量」独立设置页
+- 可见性改为按**凭据状态**判断（有 key 就显示），不再读会话的实时模型选择 —— 旧的 provider 门禁在 DSH 0.2.0 上会因 `session.models` RPC 形状变化而永远判定为「不是 opencode-go」，导致 chip 无论如何都不显示
+
+### v2.2.0 - 展示方式三档可选
+
+设置页新增「输入框展示」三档，随时切换：
+
+- **常驻展示用量**（默认）—— 只要解析到 key 就显示，与当前模型无关
+- **使用 opencode-go 才展示** —— 仅当前模型走 opencode-go provider 时显示
+- **不展示用量** —— 输入框不显示，设置页仍可查看
+
+判断从浏览器搬到 host：可见性由 host 按模式与当前模型选择算出（`agentDefaultModel.currentSelection()`），随每次轮询以 `showChip` 下发。浏览器不再做 provider 探测 —— DSH 0.2.0 的客户端既没有 `connection` 服务、`sessions` 也没有 `models()`，那条探测只会回答「未知」，从而把 chip 永久隐藏。`provider` 档在探针不可用时 fail-open（照常显示）。
+
+**升级后需要重启 `dsh web` / 桌面版**（host 半边是模块级改动），页面刷新即可看到新数据。
 
 ### v2.0.0 - 中英双语支持
 

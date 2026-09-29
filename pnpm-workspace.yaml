@@ -1,3 +1,9 @@
+# Local dev clone: the plugin targets DSH 0.2.0-rc.2, whose official
+# @deepseek-ai packages are still inside pnpm 11's default release-age
+# quarantine window. They are the exact versions this machine's DSH
+# runtime already runs, so the quarantine is disabled for this project.
+minimumReleaseAge: 0
+
 minimumReleaseAgeExclude:
   - '@deepseek-ai/cordis-plugin-include@1.0.6'
   - '@deepseek-ai/cordis-plugin-loader@1.0.2'
@@ -61,3 +67,10 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-user-questions@0.1.0-rc.6'
   - '@deepseek-ai/dsh-workspace@0.1.0-rc.6'
   - '@deepseek-ai/schemastery@3.18.1'
+  - '@deepseek-ai/dsh-brand@0.2.0-rc.2'
+  - '@deepseek-ai/dsh-client-connection@0.2.0-rc.2'
+  - '@deepseek-ai/dsh-client-locale@0.2.0-rc.2'
+  - '@deepseek-ai/dsh-client-ui-conversation@0.2.0-rc.2'
+  - '@deepseek-ai/dsh-client-ui-slots@0.2.0-rc.2'
+  - '@deepseek-ai/dsh-credentials@0.2.0-rc.2'
+  - '@deepseek-ai/dsh-host-webserver@0.2.0-rc.2'

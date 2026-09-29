@@ -27,6 +27,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-connection/client'
 import { OCGO_PROVIDER } from '../provider.ts'
 import { OcgoDockEntry, type OcgoDockEntryProps } from './OcgoDockEntry.tsx'
+import { OcgoSettingsSection, type OcgoSettingsSectionProps } from './OcgoSettingsSection.tsx'
 import { en, zh, type OcgoKey } from './locales.ts'
 
 export { OCGO_PROVIDER } from '../provider.ts'
@@ -47,16 +48,10 @@ const NS = 'ocgo'
 /** Required services: slots for the composer tool-row entry, locale for the copy. */
 export const inject = ['slots', 'locale']
 
-/** The injected business face: the tool row's owning session plus a live provider read. */
+/** The injected business face: the session this tool-row entry renders for. */
 export interface OcgoInjected {
   /** The session this dock entry renders for (slot inject factory arg). */
   dockSessionId: string | undefined
-  /**
-   * Resolve the CURRENT model provider of the dock's session from the live
-   * in-memory selection (`session.models`, warm ~ms). Undefined when the
-   * session has no selection yet.
-   */
-  provider(): Promise<string | undefined>
 }
 
 /**
@@ -66,31 +61,42 @@ export interface OcgoInjected {
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-ocgo-usage: dictionaries')
 
-  ctx.inject(['slots', 'conversation', 'connection'], (scope: ClientContext) => {
+  // The settings page. It keeps the credential editor reachable outside the
+  // composer chip — from any session, whatever model is selected.
+  //
+  // `settings.section` is declared by @deepseek-ai/dsh-client-ui-settings, but
+  // this package must NOT depend on it: adding that package to the install
+  // graph re-resolves the DSH client packages and drops
+  // @deepseek-ai/dsh-client-ui-conversation's SlotMap augmentation, which
+  // erases `conversation.input.right` — the chip's own seat — from the entire
+  // program (confirmed by bisecting the install). So this single registration
+  // is typed by hand against a local view of the slots service while every
+  // other call keeps the full SDK types. The runtime contract is unchanged:
+  // `slots.inject` waits for the declaration instead of depending on activation
+  // order.
+  const nav = ctx.locale.bind(NS)
+  const settingsSlots = ctx.slots as unknown as {
+    inject: (key: string, callback: () => () => void) => () => void
+    register: (
+      options: { name: string; id: string; order: number; label: () => string; locale: string },
+      component: (props: OcgoSettingsSectionProps) => unknown,
+    ) => () => void
+  }
+  settingsSlots.inject('settings.section', () => settingsSlots.register({
+    name: 'settings.section',
+    id: 'ocgo-usage',
+    order: 25,
+    label: () => nav('ocgo.settingsNav'),
+    locale: NS,
+  }, OcgoSettingsSection))
+
+  ctx.inject(['slots', 'conversation'], (scope: ClientContext) => {
     scope.effect(() => scope.slots.register({
       name: 'conversation.input.right',
       id: 'ocgo-usage',
       order: 110,
       locale: NS,
-      inject: (sessionId): OcgoInjected => {
-        const handle = scope.get('connection') as
-          | { readonly api: { sessions: { models(request: { sessionId: string }): Promise<{ result: { ok: boolean; value?: { current?: { provider?: string } } } }> } } }
-          | undefined
-        return {
-          dockSessionId: sessionId,
-          provider: async () => {
-            const sessions = handle?.api?.sessions
-            if (sessions === undefined) return undefined
-            try {
-              const { result } = await sessions.models({ sessionId })
-              if (!result.ok) return undefined
-              return result.value?.current?.provider
-            } catch {
-              return undefined
-            }
-          },
-        }
-      },
+      inject: (sessionId): OcgoInjected => ({ dockSessionId: sessionId }),
     }, OcgoDockEntry), 'dsh-ocgo-usage: chip registration')
   })
 }

@@ -1,18 +1,20 @@
 /**
- * HTTP fetch + response adapters for dsh-ocgo-usage
+ * HTTP fetch + response adapter for dsh-ocgo-usage.
  *
- * Cookie path (current): GET /workspace/<wrk>/go HTML SSR scrape.
- * The opencode.ai dashboard renders usage values inline in
- * `data-slot="usage-item"` blocks; this is the only cookie-authenticated
- * way to read usage today. (The proposed official API from
- * anomalyco/opencode#16513 is not merged yet; when it ships, an apikey
- * path can be added behind the same `NormalizedUsage` shape.)
+ * Source of truth: the OpenCode Go account statistics endpoint
+ * `GET {baseUrl}/usage`, authenticated with `Authorization: Bearer <apiKey>` —
+ * the same endpoint dsh-opencode-go reads. It answers
+ * `{ usage: { rolling: {...}, weekly: {...}, monthly: {...} } }`, each window
+ * `{ status, percent, resetsAt }` with `resetsAt` an absolute ISO-8601 instant.
  *
- * Adapted from pi-ocgo-usage/src/api.ts.
+ * This replaces the earlier cookie-authenticated SSR scrape of
+ * `/workspace/<wrk>/go`: the API needs no browser session, returns structured
+ * data instead of locale-dependent HTML, and reports resets as instants rather
+ * than as phrases that had to be parsed per language.
  * @module dsh-ocgo-usage/api
  */
 
-import type { NormalizedUsage, OcgoConfig, UsageWindow, UsageWindowKind } from './types.ts'
+import type { NormalizedUsage, OcgoConfig, UsageWindow, UsageWindowKind, UsageStatus } from './types.ts'
 
 // ============================================================================
 // Errors
@@ -29,34 +31,73 @@ export class UsageError extends Error {
   }
 }
 
+/** The three windows the endpoint reports. */
+const WINDOW_KINDS: readonly UsageWindowKind[] = ['rolling', 'weekly', 'monthly']
+
 // ============================================================================
-// HTTP wrapper
+// Response adapter
 // ============================================================================
 
-/** Text fetch with structured errors (cookie SSR path). */
-async function safeFetchText(url: string, headers: Record<string, string>, timeoutMs: number): Promise<string> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const res = await fetch(url, {
-      method: 'GET',
-      headers,
-      signal: controller.signal,
-    })
-    if (!res.ok) {
-      throw new UsageError(`HTTP ${res.status} for ${sanitizeUrl(url)}`, `http${res.status}`)
-    }
-    return await res.text()
-  } catch (e) {
-    if (e instanceof UsageError) throw e
-    if (e instanceof Error && e.name === 'AbortError') {
-      throw new UsageError(`Request timed out after ${timeoutMs}ms`, 'timeout')
-    }
-    throw new UsageError(String(e instanceof Error ? e.message : e), 'fetch')
-  } finally {
-    clearTimeout(timer)
-  }
+/** Build the shape error for one window. */
+function invalidWindow(kind: UsageWindowKind): UsageError {
+  return new UsageError(`Invalid "${kind}" window in the usage response`, 'invalid')
 }
+
+/**
+ * Validate one window object from the `usage` payload.
+ * @param kind - window identity to stamp onto the result.
+ * @param row - the raw window value.
+ * @returns the normalized window.
+ * @throws UsageError with code `invalid` when any field is missing or malformed.
+ */
+function parseWindow(kind: UsageWindowKind, row: unknown): UsageWindow {
+  if (row === undefined || row === null || typeof row !== 'object') {
+    throw invalidWindow(kind)
+  }
+  const w = row as Record<string, unknown>
+  const status = w.status
+  const percent = w.percent
+  const resetsAt = w.resetsAt
+  if (
+    (status !== 'ok' && status !== 'rate-limited')
+    || typeof percent !== 'number' || !Number.isFinite(percent) || percent < 0
+    || typeof resetsAt !== 'string' || !Number.isFinite(Date.parse(resetsAt))
+  ) {
+    throw invalidWindow(kind)
+  }
+  return { kind, percent: clampPercent(percent), resetsAt, status }
+}
+
+/**
+ * Parse the `usage` object of the endpoint response. Windows that are absent
+ * are omitted; a window present but malformed fails the whole read rather than
+ * silently reporting zero.
+ * @param value - the `usage` value taken from the response body.
+ * @returns the normalized windows, stamped with an `updatedAt` by the caller.
+ * @throws UsageError with code `invalid`.
+ */
+export function parseUsage(value: unknown): Omit<NormalizedUsage, 'updatedAt'> {
+  if (value === undefined || value === null || typeof value !== 'object') {
+    throw new UsageError('The usage endpoint returned no usage payload', 'invalid')
+  }
+  const source = value as Record<string, unknown>
+  const result: Record<string, UsageWindow> = {}
+  let found = 0
+  for (const kind of WINDOW_KINDS) {
+    const row = source[kind]
+    if (row === undefined || row === null) continue
+    result[kind] = parseWindow(kind, row)
+    found += 1
+  }
+  if (found === 0) {
+    throw new UsageError('The usage response carries no usage windows', 'invalid')
+  }
+  return result as Omit<NormalizedUsage, 'updatedAt'>
+}
+
+// ============================================================================
+// HTTP
+// ============================================================================
 
 /** Strip query params from a URL for safe error messages. */
 function sanitizeUrl(url: string): string {
@@ -68,185 +109,59 @@ function sanitizeUrl(url: string): string {
   }
 }
 
-// ============================================================================
-// Cookie path: GET /workspace/<wrk>/go (SSR HTML scrape)
-// ============================================================================
-
-interface SSRUsageItem {
-  readonly label: string
-  readonly percent: number
-  readonly resetsIn: string
-}
-
-/** Fetch usage through the cookie path. Throws UsageError on any failure. */
-export async function fetchViaCookie(cfg: OcgoConfig): Promise<Omit<NormalizedUsage, 'updatedAt'>> {
-  if (!cfg.cookie || !cfg.workspaceID) {
-    throw new UsageError('Missing cookie or workspaceID for cookie path', 'noconfig')
-  }
-  const url = `${cfg.baseUrl}/workspace/${encodeURIComponent(cfg.workspaceID)}/go`
-  const html = await safeFetchText(
-    url,
-    { Cookie: cfg.cookie, Accept: 'text/html' },
-    cfg.timeoutMs,
-  )
-  const parsed = fromSSRHTML(html)
-  // The page 302-redirects to the login page when the cookie is invalid;
-  // that page parses as empty, which is indistinguishable from "no windows".
-  // Only report success when at least one window was found.
-  if (parsed.rolling === undefined && parsed.weekly === undefined && parsed.monthly === undefined) {
-    throw new UsageError('Usage page parsed empty (cookie expired or invalid?)', 'http302')
-  }
-  return parsed
-}
-
 /**
- * Parse the opencode console SSR HTML page and extract the three usage
- * windows. Reset times are emitted as English phrases inside
- * `data-slot="reset-time"` (e.g. "Resets in 2 hours 29 minutes"). We parse
- * them into a coarse `resetInSec` estimate; precise second-level resets are
- * not needed for display.
+ * Fetch usage from the account statistics endpoint.
+ * @param cfg - resolved plugin configuration.
+ * @param apiKey - the bearer key (never logged).
+ * @returns the normalized windows.
+ * @throws UsageError on transport, HTTP-status or shape failure.
  */
-export function fromSSRHTML(html: string): Omit<NormalizedUsage, 'updatedAt'> {
-  // Each usage-item is a `<div data-slot="usage-item">...</div>` block, but
-  // the markup inside may itself contain nested divs (usage-header,
-  // progress bar, ...). Instead of trying to find the block's closing tag
-  // with a regex, we slice between consecutive item start tags — that keeps
-  // the whole block (including any nested divs) in one piece.
-  const itemStartRe = /<div[^>]*data-slot="usage-item"/g
-  const starts: number[] = []
-  let startMatch = itemStartRe.exec(html)
-  while (startMatch !== null) {
-    starts.push(startMatch.index)
-    startMatch = itemStartRe.exec(html)
-  }
-
-  const items: SSRUsageItem[] = []
-  for (let i = 0; i < starts.length; i++) {
-    const block = html.slice(starts[i], starts[i + 1] ?? html.length)
-    const labelMatch = block.match(/data-slot="usage-label"[^>]*>([^<]+)</)
-    const valueMatch = block.match(/data-slot="usage-value"[\s\S]*?<!--\$-->\s*(\d+)\s*<!--\/-->/)
-    // The page renders the reset phrase in the UI locale — "Resets in"
-    // (en) or "重置于" (zh) — so accept both.
-    const resetMatch = block.match(
-      /data-slot="reset-time"[\s\S]*?(?:Resets in|重置于)(?:<!--\/-->\s*)?([\s\S]*?)(?:<!--\/-->|<\/span>)/,
-    )
-    if (!labelMatch || !valueMatch) continue
-    const label = labelMatch[1]?.trim() ?? ''
-    const percent = Number.parseInt(valueMatch[1] ?? '0', 10)
-    const resetsIn = resetMatch ? stripHtmlComments(resetMatch[1] ?? '').trim() : ''
-    items.push({ label, percent, resetsIn })
-  }
-
-  const result: {
-    rolling?: UsageWindow
-    weekly?: UsageWindow
-    monthly?: UsageWindow
-  } = {}
-  for (const item of items) {
-    const kind = labelToKind(item.label)
-    if (!kind) continue
-    result[kind] = {
-      kind,
-      percent: clampPercent(item.percent),
-      resetInSec: parseDurationToSec(item.resetsIn),
-      status: item.percent >= 100 ? 'rate-limited' : 'ok',
+export async function fetchViaApi(
+  cfg: OcgoConfig,
+  apiKey: string,
+): Promise<Omit<NormalizedUsage, 'updatedAt'>> {
+  const url = `${cfg.baseUrl}/usage`
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), cfg.timeoutMs)
+  let res: Response
+  try {
+    res = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+      signal: controller.signal,
+    })
+  } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') {
+      throw new UsageError(`Request timed out after ${cfg.timeoutMs}ms`, 'timeout')
     }
+    throw new UsageError(String(e instanceof Error ? e.message : e), 'fetch')
+  } finally {
+    clearTimeout(timer)
   }
-  return result
-}
-
-function labelToKind(label: string): UsageWindowKind | undefined {
-  const lower = label.toLowerCase()
-  // English labels ("Rolling Usage", "Weekly Usage", "Monthly Usage").
-  if (lower.startsWith('rolling')) return 'rolling'
-  if (lower.startsWith('weekly')) return 'weekly'
-  if (lower.startsWith('monthly')) return 'monthly'
-  // Chinese labels rendered for zh locale ("滚动用量", "每周用量", "每月用量").
-  if (lower.startsWith('滚动')) return 'rolling'
-  if (lower.startsWith('每周')) return 'weekly'
-  if (lower.startsWith('每月')) return 'monthly'
-  return undefined
-}
-
-/** Strip SolidStart HTML comments `<!-- ... -->` from a string. */
-function stripHtmlComments(s: string): string {
-  return s.replace(/<!--[\s\S]*?-->/g, '').trim()
+  if (!res.ok) {
+    throw new UsageError(`HTTP ${res.status} for ${sanitizeUrl(url)}`, `http${res.status}`)
+  }
+  let body: unknown
+  try {
+    body = await res.json()
+  } catch {
+    throw new UsageError('The usage endpoint returned invalid JSON', 'invalid')
+  }
+  const usage = body !== null && typeof body === 'object'
+    ? (body as { usage?: unknown }).usage
+    : undefined
+  return parseUsage(usage)
 }
 
 /**
- * Parse a human duration phrase into seconds. Examples (English plus the
- * Chinese renderings used by the zh locale):
- *   "2 hours 29 minutes" → 8940      "2 小时 29 分钟" → 8940
- *   "45 minutes"          → 2700     "45 分钟"         → 2700
- *   "5 days"              → 432000   "5 天"            → 432000
- *   "30 seconds"          → 30       "30 秒"           → 30
- *   "1 week"              → 604800   "1 周"            → 604800
- *   "1 month"             → 2592000  "1 个月"          → 2592000
- *   "1 year"              → 31536000 "1 年"            → 31536000
- *
- * Returns 0 on unrecognized input.
+ * Fetch usage with the current config and stamp the fetch timestamp so the UI
+ * can report data freshness.
+ * @param cfg - resolved plugin configuration.
+ * @param apiKey - the bearer key.
+ * @returns the normalized usage including `updatedAt`.
  */
-export function parseDurationToSec(phrase: string): number {
-  if (!phrase) return 0
-  // Defensive: SolidStart may leave `<!--/-->` markers inside the captured
-  // reset phrase; strip them before matching (see stripHtmlComments).
-  const cleaned = phrase.replace(/<!--[\s\S]*?-->/g, ' ')
-  const p = cleaned.trim().replace(/\s+/g, ' ').toLowerCase()
-  if (!p) return 0
-
-  const re = /(\d+)\s*(?:个\s*)?(second|minute|hour|day|week|month|year|秒|分钟|小时|天|周|月|年)s?/g
-  let total = 0
-  let matched = false
-  let m = re.exec(p)
-  while (m !== null) {
-    const n = Number.parseInt(m[1] ?? '0', 10)
-    const unit = m[2] ?? ''
-    matched = true
-    switch (unit) {
-      case 'second':
-      case '秒':
-        total += n
-        break
-      case 'minute':
-      case '分钟':
-        total += n * 60
-        break
-      case 'hour':
-      case '小时':
-        total += n * 3600
-        break
-      case 'day':
-      case '天':
-        total += n * 86400
-        break
-      case 'week':
-      case '周':
-        total += n * 604800
-        break
-      case 'month':
-      case '月':
-        total += n * 2592000 // 30 days; coarse but adequate for display
-        break
-      case 'year':
-      case '年':
-        total += n * 31536000
-        break
-    }
-    m = re.exec(p)
-  }
-  return matched ? total : 0
-}
-
-// ============================================================================
-// Orchestrator
-// ============================================================================
-
-/**
- * Fetch usage with the current config (cookie path only today) and stamp
- * the fetch timestamp so the UI can show data freshness.
- */
-export async function fetchUsage(cfg: OcgoConfig): Promise<NormalizedUsage> {
-  const data = await fetchViaCookie(cfg)
+export async function fetchUsage(cfg: OcgoConfig, apiKey: string): Promise<NormalizedUsage> {
+  const data = await fetchViaApi(cfg, apiKey)
   return { ...data, updatedAt: Date.now() }
 }
 
@@ -254,7 +169,9 @@ export async function fetchUsage(cfg: OcgoConfig): Promise<NormalizedUsage> {
 // Internal helpers
 // ============================================================================
 
-function clampPercent(n: number | undefined): number {
-  if (n === undefined) return 0
+function clampPercent(n: number): number {
   return Math.max(0, Math.min(100, Math.floor(n)))
 }
+
+/** Re-exported for callers that only need the status union. */
+export type { UsageStatus }

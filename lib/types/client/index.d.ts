@@ -30,16 +30,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 /** Required services: slots for the composer tool-row entry, locale for the copy. */
 export declare const inject: string[];
-/** The injected business face: the tool row's owning session plus a live provider read. */
+/** The injected business face: the session this tool-row entry renders for. */
 export interface OcgoInjected {
     /** The session this dock entry renders for (slot inject factory arg). */
     dockSessionId: string | undefined;
-    /**
-     * Resolve the CURRENT model provider of the dock's session from the live
-     * in-memory selection (`session.models`, warm ~ms). Undefined when the
-     * session has no selection yet.
-     */
-    provider(): Promise<string | undefined>;
 }
 /**
  * Register the usage chip into the composer tool row next to the model selector.

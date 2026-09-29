@@ -2,104 +2,44 @@
  * The composer tool-row entry: the OpenCode Go usage readout, mounted in the
  * composer tool row (`conversation.input.right`) next to the model selector.
  * The chip polls the host `/api/ocgo-usage` endpoint for the three usage
- * windows (rolling 5h / weekly / monthly);
- * clicking reveals per-window reset countdowns, a Set editor (masked
- * workspace/cookie) and a manual refresh. In the error state, clicking the
- * chip opens the Set editor directly so a stale credential can be replaced in
- * place.
+ * windows (rolling 5h / weekly / monthly); clicking reveals per-window reset
+ * countdowns, a masked API-key editor and a manual refresh. In an error state,
+ * clicking the chip opens that editor directly so a rejected key can be
+ * replaced in place.
+ *
+ * Visibility is decided by the HOST ANSWER, not by the session's model: the
+ * numbers belong to this OpenCode Go account whichever provider the session
+ * runs, so the chip renders as soon as the host reports anything other than
+ * "no credential configured". (An earlier revision mirrored pi-ocgo-usage and
+ * hid itself unless the live model was `opencode-go`; that read the session's
+ * in-memory selection through an RPC this plugin does not need — and when that
+ * probe answers nothing the chip hid unconditionally, which is exactly what
+ * happened on DSH 0.2.0.)
  * @module dsh-ocgo-usage/client/OcgoDockEntry
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { isOpenCodeGo } from '../provider.ts'
-import type { MaskedConfigView, OcgoUsageView, UsageWindow, UsageWindowKind } from '../types.ts'
-import { NS, type OcgoKey } from './locales.ts'
+import type { MaskedConfigView, OcgoUsageView, UsageWindow } from '../types.ts'
+import { NS } from './locales.ts'
+import { maskedText, ocgoApi } from './host-api.ts'
+import { formatClock, formatDuration, resetInSec, severityClass, WINDOW_LABELS, WINDOW_TITLE_KEYS } from './windows.ts'
 import css from './ocgo.module.css'
 
-/** Poll interval for the host snapshot and the live model provider. */
+/** Poll interval for the host usage snapshot. */
 const POLL_MS = 10_000
 
-/** The masked-prefix shown before the last-4 tail of a secret. */
-const MASK = '••••'
+// The window labels, the duration/clock formatters and the severity ramp now
+// live in ./windows.ts so the settings page renders identical numbers.
+// `formatDuration` stays re-exported below: this module's published surface is
+// unchanged.
+export { formatDuration } from './windows.ts'
 
-/** Same-origin JSON fetch helper. */
-async function ocgoFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, init)
-  if (!response.ok) {
-    throw new Error(`ocgo-usage ${path} failed: ${response.status}`)
-  }
-  return (await response.json()) as T
-}
-
-/** The host usage API as the browser sees it (same-origin JSON endpoints). */
-const ocgoApi = {
-  view: () => ocgoFetch<OcgoUsageView>('/api/ocgo-usage'),
-  refresh: () => ocgoFetch<OcgoUsageView>('/api/ocgo-usage/refresh'),
-  config: () => ocgoFetch<MaskedConfigView>('/api/ocgo-usage/config'),
-  writeConfig: (partial: { cookie?: string; workspaceID?: string }) => ocgoFetch<MaskedConfigView>(
-    '/api/ocgo-usage/config',
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(partial),
-    },
-  ),
-}
-
-/** Composed props of the dock entry (runtime + locale + injected session/provider face). */
+/** Composed props of the dock entry (runtime + locale + the injected session face). */
 export type OcgoDockEntryProps =
   PropsRuntime<'conversation.input.right'>
   & PropsLocale<typeof NS>
-  & { dockSessionId?: string | undefined; provider?: () => Promise<string | undefined> }
-
-/** Short window label: 5h / wk / mo. */
-const WINDOW_LABELS: Record<UsageWindowKind, string> = {
-  rolling: '5h',
-  weekly: 'wk',
-  monthly: 'mo',
-}
-
-/** Full window label key for the detail panel. */
-const WINDOW_TITLE_KEYS: Record<UsageWindowKind, OcgoKey> = {
-  rolling: 'ocgo.rolling',
-  weekly: 'ocgo.weekly',
-  monthly: 'ocgo.monthly',
-}
-
-/**
- * Format a duration (seconds) compactly: 45s / 23m / 5h 23m / 4d 6h.
- */
-export function formatDuration(totalSec: number): string {
-  if (totalSec < 60) return `${Math.max(0, Math.floor(totalSec))}s`
-  if (totalSec < 3600) return `${Math.floor(totalSec / 60)}m`
-  if (totalSec < 86400) {
-    const h = Math.floor(totalSec / 3600)
-    const m = Math.floor((totalSec % 3600) / 60)
-    return m > 0 ? `${h}h ${m}m` : `${h}h`
-  }
-  const d = Math.floor(totalSec / 86400)
-  const h = Math.floor((totalSec % 86400) / 3600)
-  return h > 0 ? `${d}d ${h}h` : `${d}d`
-}
-
-/** Format an epoch-ms time as HH:MM. */
-function formatClock(epochMs: number): string {
-  const d = new Date(epochMs)
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  return `${hh}:${mm}`
-}
-
-/** The severity class of one window (muted → escalating warn → err). */
-function severityClass(window: UsageWindow): string | undefined {
-  if (window.status === 'rate-limited' || window.percent >= 90) return css.segCrit90
-  if (window.percent >= 80) return css.segErr80
-  if (window.percent >= 70) return css.segWarn70
-  if (window.percent >= 60) return css.segWarn60
-  if (window.percent >= 50) return css.segWarn50
-  return undefined
-}
+  & { dockSessionId?: string | undefined }
 
 /** Detect dark mode via DSH body attribute. */
 function useDarkMode(): boolean {
@@ -152,16 +92,10 @@ function WindowSegment(props: { window: UsageWindow; sep: string; compact?: bool
       <span className={css.segSep}>{sep}</span>
       <span className={cls ?? undefined}>
         {WINDOW_LABELS[window.kind]} {window.percent}%
-        {!compact ? ` (${formatDuration(window.resetInSec)})` : ''}
+        {!compact ? ` (${formatDuration(resetInSec(window))})` : ''}
       </span>
     </span>
   )
-}
-
-/** The masked display text for one secret field: `••••abcd`. */
-function maskedText(secret: { set: boolean; tail: string } | undefined): string {
-  if (secret === undefined || !secret.set || secret.tail.length === 0) return ''
-  return `${MASK}${secret.tail}`
 }
 
 /**
@@ -171,48 +105,34 @@ function maskedText(secret: { set: boolean; tail: string } | undefined): string 
  */
 export function OcgoDockEntry(props: OcgoDockEntryProps): React.ReactElement | null {
   const [view, setView] = useState<OcgoUsageView | null>(null)
+  const [answered, setAnswered] = useState(false)
   const [open, setOpen] = useState(false)
-  const [visible, setVisible] = useState(true)
-  // Panel mode: 'view' = windows + footer; 'set' = workspace/cookie editor.
+  // Panel mode: 'view' = windows + footer; 'set' = API-key editor.
   const [mode, setMode] = useState<'view' | 'set'>('view')
   const [config, setConfig] = useState<MaskedConfigView | null>(null)
-  const [wsDraft, setWsDraft] = useState('')
-  const [cookieDraft, setCookieDraft] = useState('')
+  const [keyDraft, setKeyDraft] = useState('')
   const wrapRef = useRef<HTMLSpanElement>(null)
   const modeRef = useRef<'view' | 'set'>('view')
   modeRef.current = mode
-  const draftsRef = useRef({ ws: '', cookie: '' })
-  draftsRef.current = { ws: wsDraft, cookie: cookieDraft }
+  const draftsRef = useRef({ key: '' })
+  draftsRef.current = { key: keyDraft }
   const configRef = useRef<MaskedConfigView | null>(null)
   configRef.current = config
 
-  // One periodic tick:
-  //   1. resolve the session's CURRENT provider from the live in-memory
-  //      selection (session.models, warm ~ms) and toggle `visible`;
-  //   2. only while visible, fetch the usage snapshot.
+  /** One periodic tick: read the host's usage snapshot. */
   const pollNow = useCallback(() => {
     let live = true
-    const provider = props.provider
-    const resolveProvider = provider !== undefined
-      ? Promise.resolve(provider()).then((p) => p ?? undefined, () => undefined)
-      : Promise.resolve(undefined)
-    resolveProvider.then((p) => {
+    ocgoApi.view().then((snapshot) => {
       if (!live) return
-      const shown = isOpenCodeGo(p)
-      setVisible(shown)
-      if (!shown) setOpen(false)
-      if (shown) {
-        ocgoApi.view().then((snapshot) => {
-          if (live) setView(snapshot)
-        }, () => {
-          if (live) setView(null)
-        })
-      }
+      setView(snapshot)
+      setAnswered(true)
     }, () => {
-      if (live) setVisible(false)
+      if (!live) return
+      setView(null)
+      setAnswered(true)
     })
     return () => { live = false }
-  }, [props.provider])
+  }, [])
 
   useEffect(() => {
     const cleanup = pollNow()
@@ -232,39 +152,28 @@ export function OcgoDockEntry(props: OcgoDockEntryProps): React.ReactElement | n
   const loadConfig = useCallback(() => {
     ocgoApi.config().then((snapshot) => {
       setConfig(snapshot)
-      setWsDraft(maskedText(snapshot.workspaceID))
-      setCookieDraft(maskedText(snapshot.cookie))
+      setKeyDraft(maskedText(snapshot.apiKey))
     }, () => {
-      // Editor still opens; drafts stay empty.
+      // Editor still opens; the draft stays empty.
       setConfig(null)
-      setWsDraft('')
-      setCookieDraft('')
+      setKeyDraft('')
     })
   }, [])
 
   /** Submit any edited field; returns the write promise (fire-and-forget on blur). */
   const saveConfig = useCallback((): void => {
-    const current = configRef.current
-    const partial: { cookie?: string; workspaceID?: string } = {}
-    if (current !== null) {
-      const ws = draftsRef.current.ws.trim()
-      if (ws.length > 0 && ws !== maskedText(current.workspaceID)) partial.workspaceID = ws
-      const cookie = draftsRef.current.cookie.trim()
-      if (cookie.length > 0 && cookie !== maskedText(current.cookie)) partial.cookie = cookie
-    } else {
-      // No baseline loaded (fetch failed): send whatever was typed.
-      if (draftsRef.current.ws.trim().length > 0) partial.workspaceID = draftsRef.current.ws.trim()
-      if (draftsRef.current.cookie.trim().length > 0) partial.cookie = draftsRef.current.cookie.trim()
-    }
+    const baseline = configRef.current
+    const partial: { apiKey?: string } = {}
+    const key = draftsRef.current.key.trim()
+    if (key.length > 0 && key !== maskedText(baseline?.apiKey)) partial.apiKey = key
     if (Object.keys(partial).length === 0) return
     ocgoApi.writeConfig(partial).then((snapshot) => {
       setConfig(snapshot)
-      setWsDraft(maskedText(snapshot.workspaceID))
-      setCookieDraft(maskedText(snapshot.cookie))
-      // New credentials are live now (host invalidated its cache): poll now.
+      setKeyDraft(maskedText(snapshot.apiKey))
+      // The new key is live now (host invalidated its cache): poll now.
       pollNow()
     }, () => {
-      // Ignore; the next poll resyncs and the editor keeps the drafts.
+      // Ignore; the next poll resyncs and the editor keeps the draft.
     })
   }, [pollNow])
 
@@ -314,17 +223,18 @@ export function OcgoDockEntry(props: OcgoDockEntryProps): React.ReactElement | n
   const t = props.t
   const sep = ` ${t('ocgo.sep')} `
 
-  // Hidden whenever the live provider is not opencode-go — the pi-ocgo-usage
-  // behaviour: switching to e.g. DeepSeek official hides the chip within one
-  // poll interval, so no other provider's user sees OpenCode Go numbers.
-  if (!visible) return null
+  // Nothing before the host's first answer, then the host's own verdict: it owns
+  // the visibility mode and (in `provider` mode) the model-selection check, so
+  // the browser never probes the provider itself.
+  if (!answered) return null
+  if (view !== null && view.showChip === false) return null
 
   const error = view === null ? { code: 'fetch' as const, message: t('ocgo.error', { code: 'fetch' }) }
     : view.error !== undefined
       ? { code: view.error, message: view.message ?? t('ocgo.error', { code: view.error }) }
       : null
 
-  // Error state: the chip opens the Set editor directly so a stale cookie can
+  // Error state: the chip opens the Set editor directly so a rejected key can
   // be replaced in place; clicking outside (or Esc) confirms the write.
   if (error !== null) {
     return (
@@ -341,27 +251,15 @@ export function OcgoDockEntry(props: OcgoDockEntryProps): React.ReactElement | n
           <span className={css.details}>
             <span className={css.setPanel}>
               <label className={css.field}>
-                <span className={css.fieldLabel}>{t('ocgo.workspaceID')}</span>
+                <span className={css.fieldLabel}>{t('ocgo.apiKey')}</span>
                 <input
                   className={css.fieldInput}
-                  value={wsDraft}
-                  placeholder="wrk_…"
+                  value={keyDraft}
+                  placeholder="sk-…"
                   spellCheck={false}
                   autoComplete="off"
-                  onChange={(e) => { setWsDraft(e.target.value) }}
-                  onFocus={(e) => { if (e.target.value === maskedText(config?.workspaceID)) e.target.select() }}
-                />
-              </label>
-              <label className={css.field}>
-                <span className={css.fieldLabel}>{t('ocgo.cookie')}</span>
-                <input
-                  className={css.fieldInput}
-                  value={cookieDraft}
-                  placeholder="auth=…"
-                  spellCheck={false}
-                  autoComplete="off"
-                  onChange={(e) => { setCookieDraft(e.target.value) }}
-                  onFocus={(e) => { if (e.target.value === maskedText(config?.cookie)) e.target.select() }}
+                  onChange={(e) => { setKeyDraft(e.target.value) }}
+                  onFocus={(e) => { if (e.target.value === maskedText(config?.apiKey)) e.target.select() }}
                 />
               </label>
               <span className={css.foot}>
@@ -423,27 +321,15 @@ export function OcgoDockEntry(props: OcgoDockEntryProps): React.ReactElement | n
           {mode === 'set' ? (
             <span className={css.setPanel}>
               <label className={css.field}>
-                <span className={css.fieldLabel}>{t('ocgo.workspaceID')}</span>
+                <span className={css.fieldLabel}>{t('ocgo.apiKey')}</span>
                 <input
                   className={css.fieldInput}
-                  value={wsDraft}
-                  placeholder="wrk_…"
+                  value={keyDraft}
+                  placeholder="sk-…"
                   spellCheck={false}
                   autoComplete="off"
-                  onChange={(e) => { setWsDraft(e.target.value) }}
-                  onFocus={(e) => { if (e.target.value === maskedText(config?.workspaceID)) e.target.select() }}
-                />
-              </label>
-              <label className={css.field}>
-                <span className={css.fieldLabel}>{t('ocgo.cookie')}</span>
-                <input
-                  className={css.fieldInput}
-                  value={cookieDraft}
-                  placeholder="auth=…"
-                  spellCheck={false}
-                  autoComplete="off"
-                  onChange={(e) => { setCookieDraft(e.target.value) }}
-                  onFocus={(e) => { if (e.target.value === maskedText(config?.cookie)) e.target.select() }}
+                  onChange={(e) => { setKeyDraft(e.target.value) }}
+                  onFocus={(e) => { if (e.target.value === maskedText(config?.apiKey)) e.target.select() }}
                 />
               </label>
               <span className={css.foot}>
@@ -463,7 +349,7 @@ export function OcgoDockEntry(props: OcgoDockEntryProps): React.ReactElement | n
                   <span className={css.windowValue}>
                     <span className={severityClass(w) ?? undefined}>{w.percent}%</span>
                     <span className={css.windowReset}>
-                      {t('ocgo.resetsIn', { duration: formatDuration(w.resetInSec) })}
+                      {t('ocgo.resetsIn', { duration: formatDuration(resetInSec(w)) })}
                     </span>
                   </span>
                 </span>

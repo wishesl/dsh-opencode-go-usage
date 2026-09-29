@@ -2,14 +2,15 @@
  * dsh-ocgo-usage HTTP routes — the browser half talks to the host through
  * plain same-origin JSON endpoints (`/api/ocgo-usage`, `/api/ocgo-usage/refresh`
  * and the config editor `/api/ocgo-usage/config`), which the host answers from
- * the cached OpenCode Go usage read. The client never sees the cookie — the
- * config editor serves only masked tails and accepts new values to write.
+ * the cached OpenCode Go usage read. The client never sees the API key — the
+ * config editor serves only a masked tail and accepts a new value to write.
  * @module dsh-ocgo-usage/routes
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
-import { maskedConfigView, writeConfigFile } from './config.ts'
+import { parseVisibility, writeConfigFile } from './config.ts'
+import type { ChipVisibility } from './types.ts'
 import type { OcgoUsageService, OcgoUsageView } from './service.ts'
 
 /** Browser-facing base path of the usage API. */
@@ -73,26 +74,27 @@ function getRoute(path: string, run: () => Promise<OcgoUsageView>): WebRoute {
 }
 
 /**
- * The config editor routes: GET the masked view, POST new values to write.
+ * The config editor routes: GET the masked view, POST a new key to write.
  * A successful write invalidates the usage cache so the next poll re-queries
- * with the fresh cookie/workspace immediately (bypassing any cooldown).
+ * with the fresh credential immediately (bypassing any cooldown).
  */
 function makeConfigRoutes(service: OcgoUsageService): WebRoute[] {
-  const read = (): unknown => maskedConfigView()
+  const read = (): Promise<unknown> => service.maskedConfig()
   const write = async (req: IncomingMessage): Promise<unknown> => {
-    const body = (await readJsonBody(req)) as { cookie?: unknown; workspaceID?: unknown }
-    // Distinguish "field absent" (keep current) from "field null/empty"
-    // (clear it): only keys PRESENT in the body are touched.
-    const partial: { cookie?: string | null; workspaceID?: string | null } = {}
-    if ('cookie' in body) {
-      partial.cookie = typeof body.cookie === 'string' ? body.cookie : null
+    const body = (await readJsonBody(req)) as { apiKey?: unknown; visibility?: unknown }
+    // Distinguish "field absent" (keep current) from "field null/empty" (clear
+    // the local override): only a key PRESENT in the body is touched.
+    const partial: { apiKey?: string | null; visibility?: ChipVisibility | null } = {}
+    if ('apiKey' in body) {
+      partial.apiKey = typeof body.apiKey === 'string' ? body.apiKey : null
     }
-    if ('workspaceID' in body) {
-      partial.workspaceID = typeof body.workspaceID === 'string' ? body.workspaceID : null
+    if ('visibility' in body) {
+      // An unknown mode normalizes to the default instead of hiding the readout.
+      partial.visibility = typeof body.visibility === 'string' ? parseVisibility(body.visibility) : null
     }
-    const view = writeConfigFile(partial)
+    writeConfigFile(partial)
     service.invalidateCache()
-    return view
+    return service.maskedConfig()
   }
   return [
     {
