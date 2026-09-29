@@ -18,6 +18,7 @@
  * @module dsh-ocgo-usage/client
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client';
+import { type ProviderProbe } from './model-provider.ts';
 import { type OcgoKey } from './locales.ts';
 export { OCGO_PROVIDER } from '../provider.ts';
 export { OcgoDockEntry, formatDuration } from './OcgoDockEntry.tsx';
@@ -34,6 +35,8 @@ export declare const inject: string[];
 export interface OcgoInjected {
     /** The session this dock entry renders for (slot inject factory arg). */
     dockSessionId: string | undefined;
+    /** Live model-selection probe; absent leaves `provider` visibility open. */
+    provider?: ProviderProbe;
 }
 /**
  * Register the usage chip into the composer tool row next to the model selector.

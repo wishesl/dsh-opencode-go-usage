@@ -85,12 +85,9 @@ export interface OcgoUsageView {
   /** Which source supplied the key for this read (never the value itself). */
   readonly keySource?: string
   /**
-   * Whether the composer chip should render for this snapshot. The Host decides
-   * it from the visibility mode and (in `provider` mode) the current model
-   * selection, so the browser runs no provider probe of its own.
+   * The visibility mode in force. The browser applies it to its own live model
+   * selection (see `provider.ts`), so the gate never waits for a poll.
    */
-  readonly showChip?: boolean
-  /** The visibility mode in force (echoed for diagnostics). */
   readonly visibility?: ChipVisibility
 }
 

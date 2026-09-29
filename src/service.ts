@@ -17,7 +17,6 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import { fetchUsage, UsageError } from './api.ts'
 import { ENV_API_KEY, ENV_API_KEY_ALT, loadConfig, loadLocalApiKey, maskSecret } from './config.ts'
-import { isOpenCodeGo } from './provider.ts'
 import type { ChipVisibility, MaskedConfigView, NormalizedUsage, OcgoConfig, OcgoUsageView } from './types.ts'
 
 export type { NormalizedUsage, OcgoUsageView, UsageWindow, UsageWindowKind, UsageStatus, MaskedConfigView } from './types.ts'
@@ -44,12 +43,6 @@ export interface OcgoUsageServiceOptions {
    * service, in which case only this plugin's own configured key can answer.
    */
   resolveCredential?: (ref: string) => Promise<ResolvedCredential | undefined>
-  /**
-   * The provider the current model selection runs on, read on demand for
-   * `provider` visibility. Absent — or answering undefined — fails OPEN: the
-   * chip stays visible, because a missing probe must never silence the readout.
-   */
-  currentProvider?: () => string | undefined
 }
 
 /** After a failed fetch, skip further provider queries for this long. */
@@ -68,18 +61,6 @@ function errorView(error: unknown): OcgoUsageView {
   }
   const message = error instanceof Error ? error.message : String(error)
   return { error: 'fetch', message }
-}
-
-/**
- * Whether the composer chip renders for a snapshot with this mode in force.
- * @param mode - the configured visibility mode.
- * @param provider - the current model selection's provider, when it is known.
- * @returns true when the chip should render.
- */
-function chipVisible(mode: ChipVisibility, provider: string | undefined): boolean {
-  if (mode === 'never') return false
-  if (mode !== 'provider') return true
-  return provider === undefined ? true : isOpenCodeGo(provider)
 }
 
 /** The effective key plus a browser-safe label of where it came from. */
@@ -140,22 +121,19 @@ export class OcgoUsageService extends Service {
   }
 
   /**
-   * Stamp the visibility decision and the key source onto one snapshot. The
-   * Host owns this so the browser runs no provider probe of its own.
+   * Stamp the visibility mode and the key source onto one snapshot. The Host
+   * reports the mode; the browser applies it to its own live model selection,
+   * so a `provider` change never waits for a poll.
    * @param view - the raw snapshot.
    * @param mode - the configured visibility mode.
    * @param keySource - the layer that supplied the key, when one did.
    * @returns the decorated snapshot.
    */
   private decorate(view: OcgoUsageView, mode: ChipVisibility, keySource?: string): OcgoUsageView {
-    // An unconfigured or switched-off plugin has nothing to say in the composer,
-    // whatever the visibility mode: no permanent error chip there.
-    const hidden = view.error === 'noconfig' || view.error === 'disabled'
     return {
       ...view,
       ...(keySource === undefined ? {} : { keySource }),
       visibility: mode,
-      showChip: !hidden && chipVisible(mode, this.options.currentProvider?.()),
     }
   }
 
@@ -219,13 +197,29 @@ export class OcgoUsageService extends Service {
 
   /**
    * Drop the cached usage, the failure cooldown, and the last error so the next
-   * read re-queries with the freshly written config. Called after a config edit.
+   * read re-queries the gateway with the freshly written credential.
    */
   invalidateCache(): void {
     this.cached = undefined
     this.cachedAt = 0
     this.failureUntilMs = 0
     this.lastError = undefined
+  }
+
+  /**
+   * Apply the cache consequences of one configuration write.
+   *
+   * Only a CREDENTIAL change invalidates: the numbers belong to the account, so a
+   * visibility-only write must not cost a gateway round trip. That trip is
+   * exactly what made switching the display mode feel laggy — the composer chip
+   * renders from the read that carries the mode, so it cannot show the new mode
+   * until that read answers. A mode change needs no re-query at all:
+   * {@link OcgoUsageService.decorate} re-attaches the live mode to every answer,
+   * cached ones included.
+   * @param changed - which fields the write actually touched.
+   */
+  noteConfigWrite(changed: { apiKey: boolean }): void {
+    if (changed.apiKey) this.invalidateCache()
   }
 
   private async query(cfg: OcgoConfig): Promise<OcgoUsageView> {

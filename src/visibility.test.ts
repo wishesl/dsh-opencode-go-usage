@@ -1,6 +1,7 @@
 /**
- * Visibility-mode tests: the three settings options, their persistence, and the
- * Host `showChip` decision the composer chip obeys.
+ * Visibility-mode tests: the three settings options, their persistence, the pure
+ * gate the composer chip applies to its own live model selection, and the mode
+ * the Host reports in place of a verdict.
  * @module dsh-ocgo-usage/visibility.test
  */
 
@@ -17,8 +18,8 @@ import {
   parseVisibility,
   writeConfigFile,
 } from './config.ts'
+import { chipVisible, isOpenCodeGo } from './provider.ts'
 import { OcgoUsageService, type OcgoUsageServiceOptions } from './service.ts'
-import type { ChipVisibility } from './types.ts'
 
 /** A minimal successful endpoint body. */
 const OK_BODY = JSON.stringify({
@@ -33,13 +34,6 @@ const OK_BODY = JSON.stringify({
  */
 function makeService(options: OcgoUsageServiceOptions = {}): OcgoUsageService {
   return new OcgoUsageService(new Context(), {}, options)
-}
-
-/** Mock fetch with the live endpoint's shape. */
-function mockOk(): void {
-  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-    new Response(OK_BODY, { status: 200, headers: { 'content-type': 'application/json' } }),
-  )
 }
 
 describe('parseVisibility', () => {
@@ -100,7 +94,42 @@ describe('visibility persistence', () => {
   })
 })
 
-describe('showChip', () => {
+describe('chipVisible', () => {
+  it('always mode shows whichever provider is selected', () => {
+    expect(chipVisible('always', 'opencode-go')).toBe(true)
+    expect(chipVisible('always', 'deepseek-account')).toBe(true)
+    expect(chipVisible('always', undefined)).toBe(true)
+  })
+
+  it('provider mode follows the live model selection', () => {
+    expect(chipVisible('provider', 'opencode-go')).toBe(true)
+    expect(chipVisible('provider', 'opencode-go/variant')).toBe(true)
+    expect(chipVisible('provider', 'deepseek-account')).toBe(false)
+  })
+
+  it('provider mode fails OPEN while the provider is unknown', () => {
+    // The earlier revision hid the chip whenever its probe answered nothing,
+    // which is how it disappeared unconditionally on DSH 0.2.0.
+    expect(chipVisible('provider', undefined)).toBe(true)
+  })
+
+  it('never mode hides the chip whatever the selection', () => {
+    expect(chipVisible('never', 'opencode-go')).toBe(false)
+    expect(chipVisible('never', undefined)).toBe(false)
+  })
+})
+
+describe('isOpenCodeGo', () => {
+  it('accepts the provider id and its slashed variants only', () => {
+    expect(isOpenCodeGo('opencode-go')).toBe(true)
+    expect(isOpenCodeGo('opencode-go/some-model')).toBe(true)
+    expect(isOpenCodeGo('opencode')).toBe(false)
+    expect(isOpenCodeGo('deepseek-account')).toBe(false)
+    expect(isOpenCodeGo(undefined)).toBe(false)
+  })
+})
+
+describe('the Host reports the mode, not a verdict', () => {
   let tmp: string
   const saved: Record<string, string | undefined> = {}
 
@@ -110,7 +139,7 @@ describe('showChip', () => {
       delete process.env[key]
     }
     process.env[ENV_API_KEY] = 'sk-test-key'
-    tmp = mkdtempSync(join(tmpdir(), 'dsh-ocgo-vis-chip-'))
+    tmp = mkdtempSync(join(tmpdir(), 'dsh-ocgo-vis-mode-'))
     process.env.DSH_HOME = tmp
   })
 
@@ -123,52 +152,70 @@ describe('showChip', () => {
     rmSync(tmp, { recursive: true, force: true })
   })
 
-  it('always mode shows whichever provider is selected', async () => {
-    process.env[ENV_VISIBILITY] = 'always'
-    mockOk()
-    const view = await makeService({ currentProvider: () => 'deepseek-account' }).view()
-    expect(view.visibility).toBe('always')
-    expect(view.showChip).toBe(true)
-  })
-
-  it('provider mode follows the current model selection', async () => {
+  it('carries the mode on the usage view and never a showChip verdict', async () => {
     process.env[ENV_VISIBILITY] = 'provider'
-    mockOk()
-    const onGo = await makeService({ currentProvider: () => 'opencode-go' }).view()
-    expect(onGo.showChip).toBe(true)
-    const off = await makeService({ currentProvider: () => 'deepseek-account' }).view()
-    expect(off.showChip).toBe(false)
-  })
-
-  it('provider mode fails OPEN when the selection probe is unavailable', async () => {
-    process.env[ENV_VISIBILITY] = 'provider'
-    mockOk()
-    // No currentProvider wired at all — the old revision hid the chip here.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(OK_BODY, { status: 200, headers: { 'content-type': 'application/json' } }),
+    )
     const view = await makeService().view()
-    expect(view.showChip).toBe(true)
-  })
-
-  it('never mode hides the chip while still reading usage', async () => {
-    process.env[ENV_VISIBILITY] = 'never'
-    mockOk()
-    const view = await makeService({ currentProvider: () => 'opencode-go' }).view()
-    expect(view.showChip).toBe(false)
+    expect(view.visibility).toBe('provider')
+    expect(view.showChip).toBeUndefined()
     expect(view.rolling?.percent).toBe(3)
   })
 
-  it('hides an unconfigured install in every mode', async () => {
-    delete process.env[ENV_API_KEY]
-    for (const mode of ['always', 'provider', 'never'] as const satisfies readonly ChipVisibility[]) {
-      process.env[ENV_VISIBILITY] = mode
-      const view = await makeService({ resolveCredential: async () => undefined }).view()
-      expect(view.error).toBe('noconfig')
-      expect(view.showChip).toBe(false)
-    }
-  })
-
-  it('reports the mode to the settings page', async () => {
+  it('carries the mode to the settings page', async () => {
     process.env[ENV_VISIBILITY] = 'never'
     const masked = await makeService({ resolveCredential: async () => undefined }).maskedConfig()
     expect(masked.visibility).toBe('never')
+  })
+})
+
+describe('a visibility write does not re-query the gateway', () => {
+  let tmp: string
+  const saved: Record<string, string | undefined> = {}
+
+  beforeEach(() => {
+    for (const key of [ENV_API_KEY, ENV_VISIBILITY, 'DSH_HOME']) {
+      saved[key] = process.env[key]
+      delete process.env[key]
+    }
+    process.env[ENV_API_KEY] = 'sk-test-key'
+    tmp = mkdtempSync(join(tmpdir(), 'dsh-ocgo-vis-write-'))
+    process.env.DSH_HOME = tmp
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it('serves the new mode from the cache, and only a credential write refetches', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(OK_BODY, { status: 200, headers: { 'content-type': 'application/json' } }),
+    )
+    const service = makeService()
+
+    await service.view() // one gateway read
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect((await service.view()).visibility).toBe('always')
+
+    // The user switches the display mode in Settings.
+    writeConfigFile({ visibility: 'never' })
+    service.noteConfigWrite({ apiKey: false })
+    const afterMode = await service.view()
+    // The mode is live immediately, and it cost no gateway round trip — that
+    // refetch is what made a mode switch feel laggy.
+    expect(afterMode.visibility).toBe('never')
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    // A credential write still starts from a clean slate.
+    writeConfigFile({ apiKey: 'sk-rotated' })
+    service.noteConfigWrite({ apiKey: true })
+    await service.view()
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
 })

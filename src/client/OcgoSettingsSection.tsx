@@ -20,6 +20,7 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChipVisibility, MaskedConfigView, OcgoUsageView, UsageWindow } from '../types.ts'
 import { NS, type OcgoKey } from './locales.ts'
 import { maskedText, ocgoApi } from './host-api.ts'
+import { notifyConfigChanged } from './config-bus.ts'
 import { formatClock, formatDuration, resetInSec, severityClass, WINDOW_TITLE_KEYS } from './windows.ts'
 import css from './ocgo.module.css'
 
@@ -113,6 +114,8 @@ export function OcgoSettingsSection(props: OcgoSettingsSectionProps): React.Reac
       adopt(snapshot)
       setBusy(false)
       setNotice({ kind: 'ok', text: tRef.current('ocgo.saved') })
+      // The composer chip re-reads at once instead of on its next tick.
+      notifyConfigChanged()
       return ocgoApi.refresh().then((fresh) => { setView(fresh) }, () => { setView(null) })
     }, () => {
       setBusy(false)
@@ -129,6 +132,7 @@ export function OcgoSettingsSection(props: OcgoSettingsSectionProps): React.Reac
         adopt(snapshot)
         setBusy(false)
         setNotice({ kind: 'ok', text: tRef.current('ocgo.cleared') })
+        notifyConfigChanged()
         return ocgoApi.refresh().then((fresh) => { setView(fresh) }, () => { setView(null) })
       }, () => {
         setBusy(false)
@@ -152,7 +156,7 @@ export function OcgoSettingsSection(props: OcgoSettingsSectionProps): React.Reac
     })
   }, [])
 
-  /** Persist one visibility mode; the composer picks it up on its next poll. */
+  /** Persist one visibility mode; the composer chip picks it up immediately. */
   const setVisibility = useCallback((mode: ChipVisibility): void => {
     if (configRef.current?.visibility === mode) return
     setBusy(true)
@@ -161,6 +165,7 @@ export function OcgoSettingsSection(props: OcgoSettingsSectionProps): React.Reac
       adopt(snapshot)
       setBusy(false)
       setNotice({ kind: 'ok', text: tRef.current('ocgo.visSaved') })
+      notifyConfigChanged()
     }, () => {
       setBusy(false)
       setNotice({ kind: 'err', text: tRef.current('ocgo.saveFailed') })

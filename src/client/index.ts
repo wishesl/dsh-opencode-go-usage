@@ -28,6 +28,7 @@ import type {} from '@deepseek-ai/dsh-client-connection/client'
 import { OCGO_PROVIDER } from '../provider.ts'
 import { OcgoDockEntry, type OcgoDockEntryProps } from './OcgoDockEntry.tsx'
 import { OcgoSettingsSection, type OcgoSettingsSectionProps } from './OcgoSettingsSection.tsx'
+import { createProviderProbe, type ProviderProbe, type ServiceLookup } from './model-provider.ts'
 import { en, zh, type OcgoKey } from './locales.ts'
 
 export { OCGO_PROVIDER } from '../provider.ts'
@@ -52,6 +53,31 @@ export const inject = ['slots', 'locale']
 export interface OcgoInjected {
   /** The session this dock entry renders for (slot inject factory arg). */
   dockSessionId: string | undefined
+  /** Live model-selection probe; absent leaves `provider` visibility open. */
+  provider?: ProviderProbe
+}
+
+/**
+ * One stable probe per session. The slot inject factory may run on every render,
+ * and a fresh probe identity would make React resubscribe each time; the cache
+ * also keeps the subscription's identity stable. Probes are tiny (a context
+ * reference and a session id) and a composition holds few sessions.
+ */
+const probes = new Map<string, ProviderProbe>()
+
+/**
+ * Resolve the probe for one session, minting it on first use.
+ * @param lookup - the client context, seen as a service lookup.
+ * @param sessionId - the session whose selection decides visibility.
+ * @returns the cached probe.
+ */
+function probeFor(lookup: ServiceLookup, sessionId: string): ProviderProbe {
+  let probe = probes.get(sessionId)
+  if (probe === undefined) {
+    probe = createProviderProbe(lookup, sessionId)
+    probes.set(sessionId, probe)
+  }
+  return probe
 }
 
 /**
@@ -91,12 +117,19 @@ export function apply(ctx: ClientContext): void {
   }, OcgoSettingsSection))
 
   ctx.inject(['slots', 'conversation'], (scope: ClientContext) => {
+    // `provider` visibility is settled from the model-selection service's own
+    // per-session store, read structurally — see ./model-provider.ts for why it
+    // is not a package dependency.
+    const lookup = scope as unknown as ServiceLookup
     scope.effect(() => scope.slots.register({
       name: 'conversation.input.right',
       id: 'ocgo-usage',
       order: 110,
       locale: NS,
-      inject: (sessionId): OcgoInjected => ({ dockSessionId: sessionId }),
+      inject: (sessionId): OcgoInjected => ({
+        dockSessionId: sessionId,
+        ...(sessionId === undefined ? {} : { provider: probeFor(lookup, sessionId) }),
+      }),
     }, OcgoDockEntry), 'dsh-ocgo-usage: chip registration')
   })
 }

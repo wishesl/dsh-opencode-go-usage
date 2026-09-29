@@ -36,12 +36,6 @@ export interface OcgoUsageServiceOptions {
      * service, in which case only this plugin's own configured key can answer.
      */
     resolveCredential?: (ref: string) => Promise<ResolvedCredential | undefined>;
-    /**
-     * The provider the current model selection runs on, read on demand for
-     * `provider` visibility. Absent — or answering undefined — fails OPEN: the
-     * chip stays visible, because a missing probe must never silence the readout.
-     */
-    currentProvider?: () => string | undefined;
 }
 /** After a failed fetch, skip further provider queries for this long. */
 export declare const FAILURE_COOLDOWN_MS = 60000;
@@ -75,8 +69,9 @@ export declare class OcgoUsageService extends Service {
      */
     private resolveKey;
     /**
-     * Stamp the visibility decision and the key source onto one snapshot. The
-     * Host owns this so the browser runs no provider probe of its own.
+     * Stamp the visibility mode and the key source onto one snapshot. The Host
+     * reports the mode; the browser applies it to its own live model selection,
+     * so a `provider` change never waits for a poll.
      * @param view - the raw snapshot.
      * @param mode - the configured visibility mode.
      * @param keySource - the layer that supplied the key, when one did.
@@ -97,9 +92,24 @@ export declare class OcgoUsageService extends Service {
     maskedConfig(): Promise<MaskedConfigView>;
     /**
      * Drop the cached usage, the failure cooldown, and the last error so the next
-     * read re-queries with the freshly written config. Called after a config edit.
+     * read re-queries the gateway with the freshly written credential.
      */
     invalidateCache(): void;
+    /**
+     * Apply the cache consequences of one configuration write.
+     *
+     * Only a CREDENTIAL change invalidates: the numbers belong to the account, so a
+     * visibility-only write must not cost a gateway round trip. That trip is
+     * exactly what made switching the display mode feel laggy — the composer chip
+     * renders from the read that carries the mode, so it cannot show the new mode
+     * until that read answers. A mode change needs no re-query at all:
+     * {@link OcgoUsageService.decorate} re-attaches the live mode to every answer,
+     * cached ones included.
+     * @param changed - which fields the write actually touched.
+     */
+    noteConfigWrite(changed: {
+        apiKey: boolean;
+    }): void;
     private query;
 }
 //# sourceMappingURL=service.d.ts.map

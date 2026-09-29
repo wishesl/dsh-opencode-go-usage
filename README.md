@@ -21,9 +21,9 @@ OpenCode Go: 5h 0% (1h 23m) · wk 65% (2d 20h) · mo 83% (6d 21h) · upd 20:15
 - **三个窗口** —— 5h 滚动 / 每周 / 每月 的百分比 + 重置倒计时
 - **颜色阈值** —— 正常 → 黄色警告（≥80%）→ 红色错误（≥90% 或已限流）
 - **数据新鲜度** —— `upd HH:MM` 显示最近一次成功抓取时间
-- **轻量轮询** —— 每 10s 轮询（切回标签页立即刷新）；host 端 300s 缓存（TTL 可配）+ 60s 失败冷却，不会频繁打扰 opencode.ai
+- **轻量轮询** —— 轮询只负责「取数字」：每 10s 一次（切回标签页立即刷新）；host 端 300s 缓存（TTL 可配）+ 60s 失败冷却，不会频繁打扰 opencode.ai。**显示与否不受这个周期影响**，见下一条
 - **三档展示方式（设置页可选）** —— `常驻展示用量`（默认：只要解析到 key 就显示，与当前模型无关）/ `使用 opencode-go 才展示`（仅当前模型走 opencode-go provider 时显示）/ `不展示用量`（输入框不显示，设置页仍可查看）。哪里都没有 key 时任何档位都不显示，不在输入框常驻一个报错 chip
-- **判断在 host 侧** —— 显示与否由 host 按模式 + 当前模型选择算出（`agentDefaultModel.currentSelection()`），浏览器不做任何 provider 探测；`provider` 档在探针不可用时 **fail-open**（照常显示），避免因探测失败而静默消失
+- **切换即时生效** —— 模式变更是本 bundle 内的直接通知；模型切换则由插件直接订阅模型选择器渲染用的那个 store（`modelDirectories` → `ModelDirectory.store`），**同步内存读取 + 变更通知**，都不必等下一次轮询。`provider` 档在探测不可用时 **fail-open**（照常显示），避免因探测失败而静默消失
 - **点击展开** —— 详情面板显示每个窗口的重置倒计时，左下角 `Set` 可编辑 API key，右侧 `refresh upd HH:MM` 手动刷新
 - **内置凭据编辑器** —— 无需碰终端：`Set` / 设置页直接填 API key（输入框以 `••••` + 末尾 4 位显示，点击外部 / Esc / 保存确认写入）
 - **优雅降级** —— 配置缺失显示 `<err:noconfig>`，HTTP 失败显示 `<err:httpXXX>`；出错时点击 chip 直接进入 Set 面板
@@ -147,7 +147,7 @@ chmod 600 ~/.dsh/ocgo-usage.json
 ## 工作原理
 
 - **Host 半**（`src/index.ts`、`src/service.ts`、`src/api.ts`、`src/routes.ts`）—— 按引用名从 DSH 凭据库解析 API key，带 `Authorization: Bearer` 请求 `GET {baseUrl}/usage`，把 `{usage:{rolling,weekly,monthly}}` 校验成 `{percent, resetsAt, status}`，缓存结果，通过同源 JSON 端点 `/api/ocgo-usage`（+ `/api/ocgo-usage/refresh`、`/api/ocgo-usage/config`）提供数据。
-- **浏览器半**（`src/client/`）—— 向 `conversation.input.right` slot 注册 chip，每 10s 轮询 host 端点，按严重级别着色渲染三个窗口；可见性来自 host 的凭据状态。
+- **浏览器半**（`src/client/`）—— 向 `conversation.input.right` slot 注册 chip，每 10s 轮询 host 端点取数，按严重级别着色渲染三个窗口；显示与否 = host 下发的模式 + **本会话实时的模型选择**（直接读模型选择器渲染用的 `modelDirectories` store 并订阅其变更，所以切模型即时反映，不等轮询）。
 
 浏览器永远看不到 API key；解析与请求全部在 host 侧完成。
 
@@ -182,6 +182,17 @@ MIT —— 见 [LICENSE](./LICENSE)。
 - 窗口数据变成结构化的 `{status, percent, resetsAt}`；重置倒计时由绝对时间戳推算，不再依赖页面语言，也不需要再解析本地化的 "Resets in / 重置于" 文案
 - 移除 cookie、workspace id 相关的配置、解析与测试；新增「设置 → OpenCode Go 用量」独立设置页
 - 可见性改为按**凭据状态**判断（有 key 就显示），不再读会话的实时模型选择 —— 旧的 provider 门禁在 DSH 0.2.0 上会因 `session.models` RPC 形状变化而永远判定为「不是 opencode-go」，导致 chip 无论如何都不显示
+
+### v2.2.1 - 模式与模型切换即时生效
+
+之前切换展示方式或切换模型，chip 都要等下一次轮询（最长 10s）才变。现在两者都即时：
+
+- **模型切换**：判断改用**模型选择器自己渲染用的那个 store**（`@deepseek-ai/dsh-client-ui-model-selection` 的 `modelDirectories` → `ModelDirectory.store`）。同步内存读取 + 订阅变更，所以点下新模型就反映；host 侧那个 `agentDefaultModel.currentSelection()` 探测已移除。
+- **模式切换**：设置页与本 chip 同在一个 client bundle，写完后直接通知 chip 重读，零额外请求。
+- 该服务按引用名结构化访问（`ctx.get(...)`），**不新增依赖** —— 引入那个包会重排 DSH 客户端包并打散 SlotMap 合并（见 v2.2.0 那条的同类问题）。
+- 探测不可用时依旧 **fail-open**：`provider` 档照常显示。
+- 轮询回归它唯一的职责：取数字。
+- **设置页切换模式不再等一次网关往返**：写配置此前无条件清掉用量缓存，于是紧接的那次读取会重新打 opencode.ai —— 实测同一台机器上「命中缓存 3ms vs 写完后 501ms」。现在只有**凭据**变更才清缓存：模式只是本地配置，`decorate()` 每次读取都会贴上最新的模式，缓存命中也不例外。（实测：可见性写入后 0ms，凭据写入后 446ms。）
 
 ### v2.2.0 - 展示方式三档可选
 

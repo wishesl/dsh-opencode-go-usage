@@ -70,37 +70,9 @@ function credentialSeam(ctx: Context): (ref: string) => Promise<ResolvedCredenti
   }
 }
 
-/**
- * The current model selection's provider, read through the Host service that
- * owns that selection.
- *
- * This is the one authority for `provider` visibility: the client-side probe the
- * plugin used to run (`connection.api.sessions.models`) has no counterpart in
- * DSH 0.2.0 — there is no catalogued `connection` client service, and `sessions`
- * exposes no `models()` — so a browser-side check can only answer "unknown",
- * which used to hide the chip unconditionally.
- * @param ctx - the plugin context.
- * @returns the provider id, or undefined when the selection is unavailable.
- */
-function currentProvider(ctx: Context): string | undefined {
-  const lookup = ctx as unknown as { get(key: string): unknown }
-  const service = lookup.get('agentDefaultModel') as
-    | { currentSelection(): { provider?: unknown } | undefined }
-    | undefined
-  try {
-    const provider = service?.currentSelection()?.provider
-    return typeof provider === 'string' && provider.length > 0 ? provider : undefined
-  } catch {
-    return undefined
-  }
-}
-
 /** Register the usage service and its API routes on the context. */
 export function apply(ctx: Context, config: OcgoUsageConfig = {}): void {
-  const service = new OcgoUsageService(ctx, config, {
-    resolveCredential: credentialSeam(ctx),
-    currentProvider: () => currentProvider(ctx),
-  })
+  const service = new OcgoUsageService(ctx, config, { resolveCredential: credentialSeam(ctx) })
 
   // The routes are registered while the plugin is enabled.
   const routes = makeOcgoRoutes(service)

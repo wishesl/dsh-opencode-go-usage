@@ -18,16 +18,23 @@
  * @module dsh-ocgo-usage/client/OcgoDockEntry
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MaskedConfigView, OcgoUsageView, UsageWindow } from '../types.ts'
+import { chipVisible } from '../provider.ts'
+import { onConfigChanged } from './config-bus.ts'
 import { NS } from './locales.ts'
 import { maskedText, ocgoApi } from './host-api.ts'
+import type { ProviderProbe } from './model-provider.ts'
 import { formatClock, formatDuration, resetInSec, severityClass, WINDOW_LABELS, WINDOW_TITLE_KEYS } from './windows.ts'
 import css from './ocgo.module.css'
 
-/** Poll interval for the host usage snapshot. */
+/** Poll interval for the host usage snapshot. The provider gate does not wait
+ * for it: the model-selection store notifies this component directly. */
 const POLL_MS = 10_000
+
+/** A disposer that does nothing, for a probe that could not subscribe. */
+const NOOP = (): void => {}
 
 // The window labels, the duration/clock formatters and the severity ramp now
 // live in ./windows.ts so the settings page renders identical numbers.
@@ -39,7 +46,12 @@ export { formatDuration } from './windows.ts'
 export type OcgoDockEntryProps =
   PropsRuntime<'conversation.input.right'>
   & PropsLocale<typeof NS>
-  & { dockSessionId?: string | undefined }
+  & {
+    /** The session this entry renders for. */
+    dockSessionId?: string | undefined
+    /** Live model-selection probe; absent leaves `provider` visibility open. */
+    provider?: ProviderProbe
+  }
 
 /** Detect dark mode via DSH body attribute. */
 function useDarkMode(): boolean {
@@ -119,6 +131,17 @@ export function OcgoDockEntry(props: OcgoDockEntryProps): React.ReactElement | n
   const configRef = useRef<MaskedConfigView | null>(null)
   configRef.current = config
 
+  // The provider gate reads the very store the model selector renders from:
+  // synchronous, in-memory, and notified on every selection change — so picking
+  // a model lands here at once instead of on the next poll.
+  const probe = props.provider
+  const subscribeProvider = useCallback(
+    (onChange: () => void) => (probe === undefined ? NOOP : probe.subscribe(onChange)),
+    [probe],
+  )
+  const readProvider = useCallback(() => probe?.read(), [probe])
+  const provider = useSyncExternalStore(subscribeProvider, readProvider)
+
   /** One periodic tick: read the host's usage snapshot. */
   const pollNow = useCallback(() => {
     let live = true
@@ -147,6 +170,11 @@ export function OcgoDockEntry(props: OcgoDockEntryProps): React.ReactElement | n
       document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [pollNow])
+
+  // A config write made in this bundle (Settings → OpenCode Go) reaches the chip
+  // at once instead of on the next tick. The provider gate needs no such signal:
+  // the model-selection store pushes to it directly.
+  useEffect(() => onConfigChanged(pollNow), [pollNow])
 
   /** Load the masked config into the editor drafts. */
   const loadConfig = useCallback(() => {
@@ -223,11 +251,12 @@ export function OcgoDockEntry(props: OcgoDockEntryProps): React.ReactElement | n
   const t = props.t
   const sep = ` ${t('ocgo.sep')} `
 
-  // Nothing before the host's first answer, then the host's own verdict: it owns
-  // the visibility mode and (in `provider` mode) the model-selection check, so
-  // the browser never probes the provider itself.
+  // Nothing before the host's first answer. Then the mode the host reports is
+  // applied to the live provider read above, and the two states that have
+  // nothing to say in the composer are dropped outright.
   if (!answered) return null
-  if (view !== null && view.showChip === false) return null
+  if (view !== null && (view.error === 'noconfig' || view.error === 'disabled')) return null
+  if (!chipVisible(view?.visibility ?? 'always', provider)) return null
 
   const error = view === null ? { code: 'fetch' as const, message: t('ocgo.error', { code: 'fetch' }) }
     : view.error !== undefined

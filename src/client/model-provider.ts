@@ -1,0 +1,107 @@
+/**
+ * Live model-selection probe for this Session's provider.
+ *
+ * `@deepseek-ai/dsh-client-ui-model-selection` mounts a root client service,
+ * `modelDirectories`, whose per-Session `ModelDirectory.store` is the very
+ * snapshot the model selector renders from. Reading it is a synchronous
+ * in-memory lookup, so the composer chip can settle `provider` visibility the
+ * instant a model is picked — no Host round trip, no poll interval.
+ *
+ * The service is reached structurally (`ctx.get(...)`) rather than through a
+ * package import on purpose: adding that package to this plugin's dependencies
+ * re-resolves the DSH client packages and drops the `SlotMap` augmentation this
+ * package's own slots depend on. Every failure path answers "unknown", and
+ * `chipVisible` treats unknown as visible.
+ * @module dsh-ocgo-usage/client/model-provider
+ */
+
+/** The slice of a Cordis context this probe needs. */
+export interface ServiceLookup {
+  get(key: string): unknown
+}
+
+/** One ModelSelection, as far as this plugin reads it. */
+interface ModelSelectionLike {
+  provider?: unknown
+}
+
+/** The `ModelDirectoryState` members this plugin reads. */
+interface ModelDirectoryStateLike {
+  /** Saved selection, retained even when its provider leaves the catalog. */
+  current?: ModelSelectionLike | null
+  /** Selection submitted by the latest `select` until it settles. */
+  pending?: ModelSelectionLike | null
+}
+
+/** The observable snapshot store both model-selection surfaces render from. */
+interface ModelDirectoryStoreLike {
+  getSnapshot(): ModelDirectoryStateLike
+  subscribe(listener: () => void): () => void
+}
+
+/** The `modelDirectories` service, reduced to the one call this plugin makes. */
+interface ModelDirectoryResolverLike {
+  directoryFor(sessionId: string): { store?: ModelDirectoryStoreLike } | undefined
+}
+
+/** A live view of one Session's provider, plus its change notifications. */
+export interface ProviderProbe {
+  /** The provider in force right now; undefined while unknown. */
+  read(): string | undefined
+  /**
+   * Observe selection changes.
+   * @param listener - called after every store update.
+   * @returns the disposer, a no-op while the service is unavailable.
+   */
+  subscribe(listener: () => void): () => void
+}
+
+/**
+ * Resolve this Session's model-directory store, tolerating every failure.
+ * @param ctx - a client context able to resolve services.
+ * @param sessionId - the Session whose selection decides visibility.
+ * @returns the store, or undefined when the service or the Session is absent.
+ */
+function directoryOf(ctx: ServiceLookup, sessionId: string): ModelDirectoryStoreLike | undefined {
+  try {
+    const resolver = ctx.get('modelDirectories') as ModelDirectoryResolverLike | undefined
+    return resolver?.directoryFor(sessionId)?.store
+  } catch {
+    // `directoryFor` fails loud for a session it cannot address; unknown is our
+    // answer, and `chipVisible` renders unknown as visible.
+    return undefined
+  }
+}
+
+/**
+ * Build the provider probe for one Session.
+ * @param ctx - a client context able to resolve services.
+ * @param sessionId - the Session whose selection decides visibility.
+ * @returns the probe; every member answers "unknown" without the service.
+ */
+export function createProviderProbe(ctx: ServiceLookup, sessionId: string): ProviderProbe {
+  return {
+    read: () => {
+      const store = directoryOf(ctx, sessionId)
+      if (store === undefined) return undefined
+      try {
+        const state = store.getSnapshot()
+        // `pending` first: while a switch is in flight it already holds the new
+        // target, so the chip reacts to the click rather than to the settle.
+        const provider = (state.pending ?? state.current)?.provider
+        return typeof provider === 'string' && provider.length > 0 ? provider : undefined
+      } catch {
+        return undefined
+      }
+    },
+    subscribe: (listener) => {
+      const store = directoryOf(ctx, sessionId)
+      if (store === undefined) return () => {}
+      try {
+        return store.subscribe(listener)
+      } catch {
+        return () => {}
+      }
+    },
+  }
+}

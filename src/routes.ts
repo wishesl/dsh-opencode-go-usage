@@ -93,7 +93,7 @@ function makeConfigRoutes(service: OcgoUsageService): WebRoute[] {
       partial.visibility = typeof body.visibility === 'string' ? parseVisibility(body.visibility) : null
     }
     writeConfigFile(partial)
-    service.invalidateCache()
+    service.noteConfigWrite({ apiKey: 'apiKey' in body })
     return service.maskedConfig()
   }
   return [

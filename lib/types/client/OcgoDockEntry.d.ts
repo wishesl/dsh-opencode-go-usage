@@ -19,10 +19,14 @@
  */
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import { NS } from './locales.ts';
+import type { ProviderProbe } from './model-provider.ts';
 export { formatDuration } from './windows.ts';
 /** Composed props of the dock entry (runtime + locale + the injected session face). */
 export type OcgoDockEntryProps = PropsRuntime<'conversation.input.right'> & PropsLocale<typeof NS> & {
+    /** The session this entry renders for. */
     dockSessionId?: string | undefined;
+    /** Live model-selection probe; absent leaves `provider` visibility open. */
+    provider?: ProviderProbe;
 };
 /**
  * The OpenCode Go usage chip: polls the host snapshot, renders the three
