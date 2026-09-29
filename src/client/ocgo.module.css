@@ -87,7 +87,15 @@
   padding: 8px 10px;
   border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
   border-radius: 8px;
-  background: var(--dsw-specific-menu, #ffffff);
+  /* Opaque on purpose. `--dsw-specific-menu` is a translucent frosted surface,
+     so a single `background` let the transcript read through the popup. Paint
+     the menu tint over an opaque layer instead: the `background` shorthand
+     takes one colour, but two gradients composite as stacked layers. Same
+     technique as dsh-opencode-go's usage pill. */
+  background-color: var(--dsw-alias-bg-layer-1, Canvas);
+  background-image:
+    linear-gradient(var(--dsw-specific-menu, transparent), var(--dsw-specific-menu, transparent)),
+    linear-gradient(var(--dsw-alias-bg-layer-2, Canvas), var(--dsw-alias-bg-layer-2, Canvas));
   color: var(--dsw-alias-label-primary, #0f1115);
   box-shadow: var(--dsw-shadow-lv3, 0 4px 12px rgba(0, 0, 0, 0.08));
   font-size: 12px;
