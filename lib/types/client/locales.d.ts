@@ -11,6 +11,7 @@ export declare const zh: {
     readonly 'ocgo.noconfig': "未配置：请在「设置 → OpenCode Go 用量」里填入 API key，或设置 OPENCODE_GO_API_KEY";
     readonly 'ocgo.refresh': "刷新";
     readonly 'ocgo.fetchedAt': "upd {time}";
+    readonly 'ocgo.stale': "本次访问超时，展示的是上一轮的数据";
     readonly 'ocgo.rolling': "5h 滚动";
     readonly 'ocgo.weekly': "每周";
     readonly 'ocgo.monthly': "每月";
@@ -57,6 +58,7 @@ export declare const en: {
     readonly 'ocgo.noconfig': "Not configured: paste an API key in Settings → OpenCode Go usage, or set OPENCODE_GO_API_KEY";
     readonly 'ocgo.refresh': "Refresh";
     readonly 'ocgo.fetchedAt': "upd {time}";
+    readonly 'ocgo.stale': "This access timed out — showing the previous round";
     readonly 'ocgo.rolling': "5h Rolling";
     readonly 'ocgo.weekly': "Weekly";
     readonly 'ocgo.monthly': "Monthly";

@@ -47,7 +47,9 @@ declare module '@deepseek-ai/cordis' {
 /**
  * Cached OpenCode Go usage read. `view()` answers from a fresh cache, otherwise
  * queries the gateway (deduped when concurrent). A failed query enters a short
- * cooldown so a broken credential is not hammered by the poller.
+ * cooldown so a broken credential is not hammered by the poller, and a
+ * TRANSIENT failure (timeout, transport, 5xx) during it serves the previous
+ * round marked `stale` instead of replacing the numbers with an error.
  */
 export declare class OcgoUsageService extends Service {
     private readonly enabled;
@@ -111,5 +113,13 @@ export declare class OcgoUsageService extends Service {
         apiKey: boolean;
     }): void;
     private query;
+    /**
+     * The previous successful round dressed as a stale answer. Only reachable
+     * while a round is cached: before the first success there is nothing to fall
+     * back to and the real error must surface.
+     * @param cfg - the resolved configuration (visibility + key source).
+     * @returns the stale view, or undefined when no round has ever succeeded.
+     */
+    private staleView;
 }
 //# sourceMappingURL=service.d.ts.map

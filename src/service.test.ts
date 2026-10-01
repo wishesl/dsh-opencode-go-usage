@@ -155,4 +155,66 @@ describe('OcgoUsageService', () => {
     expect(masked.apiKey).toEqual({ set: false, tail: '' })
     expect(masked.source).toBeUndefined()
   })
+
+  it('serves the previous round marked stale when a later access times out', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okResponse())
+    const service = new OcgoUsageService(ctx)
+    const first = await service.view()
+    expect(first.error).toBeUndefined()
+    expect(first.stale).toBeUndefined()
+
+    const abort = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+    fetchSpy.mockRejectedValue(abort)
+    const second = await service.refresh()
+    expect(second.error).toBeUndefined()
+    expect(second.stale).toBe(true)
+    expect(second.rolling?.percent).toBe(23)
+    expect(second.monthly?.status).toBe('rate-limited')
+    // The freshness stamp still belongs to the round actually on screen.
+    expect(second.updatedAt).toBe(first.updatedAt)
+  })
+
+  it('keeps serving the surviving round through the cooldown once the cache window expired', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okResponse())
+    const service = new OcgoUsageService(ctx)
+    const first = await service.view()
+    const abort = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+
+    vi.useFakeTimers()
+    try {
+      // Past the 300 s cache TTL: the next read must re-query the gateway.
+      vi.setSystemTime((first.updatedAt ?? 0) + 310_000)
+      fetchSpy.mockRejectedValue(abort)
+      const failed = await service.refresh()
+      expect(failed.stale).toBe(true)
+      expect(failed.error).toBeUndefined()
+
+      // Inside the failure cooldown: no fetch, the previous round stays up.
+      fetchSpy.mockClear()
+      const view = await service.view()
+      expect(view.stale).toBe(true)
+      expect(view.rolling?.percent).toBe(23)
+      expect(fetchSpy).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps a rejected credential visible instead of masking it with stale data', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okResponse())
+    const service = new OcgoUsageService(ctx)
+    await service.view()
+    fetchSpy.mockResolvedValue(new Response('denied', { status: 401 }))
+    const view = await service.refresh()
+    expect(view.error).toBe('http401')
+    expect(view.stale).toBeUndefined()
+  })
+
+  it('reports a timeout as an error when no round has ever succeeded', async () => {
+    const abort = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(abort)
+    const view = await new OcgoUsageService(ctx).view()
+    expect(view.error).toBe('timeout')
+    expect(view.stale).toBeUndefined()
+  })
 })

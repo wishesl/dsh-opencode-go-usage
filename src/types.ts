@@ -80,6 +80,14 @@ export interface OcgoUsageView {
   readonly monthly?: UsageWindowView
   /** Machine-readable error code, present only on failure. */
   readonly error?: string
+  /**
+   * The latest access failed transiently (timeout, network drop or a 5xx), so
+   * these are the WINDOWS OF THE PREVIOUS SUCCESSFUL ROUND rather than a fresh
+   * read — `updatedAt` still stamps that older fetch. Absent on a fresh read.
+   * A transient failure never replaces the numbers with an error view: the
+   * chip and the settings page keep showing what the last round produced.
+   */
+  readonly stale?: boolean
   /** Human-readable failure detail (never contains the key). */
   readonly message?: string
   /** Which source supplied the key for this read (never the value itself). */

@@ -38,8 +38,10 @@ export type OcgoSettingsSectionProps = PropsLocale<typeof NS> & {
 
 /** One page-local status line under the credential actions. */
 interface Notice {
-  /** `ok` for a saved/tested state, `err` for a failure or a rejected write. */
-  readonly kind: 'ok' | 'err'
+  /** `ok` for a saved/tested state, `err` for a failure or a rejected write,
+   *  `stale` when the test answered with the previous round instead of a fresh
+   *  read (a timed-out access the host served from its cache). */
+  readonly kind: 'ok' | 'err' | 'stale'
   /** Already-localized text. */
   readonly text: string
 }
@@ -93,7 +95,9 @@ export function OcgoSettingsSection(props: OcgoSettingsSectionProps): React.Reac
     ocgoApi.config().then(adopt, () => {
       setNotice({ kind: 'err', text: tRef.current('ocgo.loadFailed') })
     })
-    ocgoApi.view().then((snapshot) => { setView(snapshot) }, () => { setView(null) })
+    // A failed read keeps the previous round on the page (nothing to keep on a
+    // first load, which then falls back to the error line below).
+    ocgoApi.view().then((snapshot) => { setView(snapshot) }, () => {})
   }, [adopt])
 
   useEffect(() => { load() }, [load])
@@ -116,7 +120,7 @@ export function OcgoSettingsSection(props: OcgoSettingsSectionProps): React.Reac
       setNotice({ kind: 'ok', text: tRef.current('ocgo.saved') })
       // The composer chip re-reads at once instead of on its next tick.
       notifyConfigChanged()
-      return ocgoApi.refresh().then((fresh) => { setView(fresh) }, () => { setView(null) })
+      return ocgoApi.refresh().then((fresh) => { setView(fresh) }, () => {})
     }, () => {
       setBusy(false)
       setNotice({ kind: 'err', text: tRef.current('ocgo.saveFailed') })
@@ -133,7 +137,7 @@ export function OcgoSettingsSection(props: OcgoSettingsSectionProps): React.Reac
         setBusy(false)
         setNotice({ kind: 'ok', text: tRef.current('ocgo.cleared') })
         notifyConfigChanged()
-        return ocgoApi.refresh().then((fresh) => { setView(fresh) }, () => { setView(null) })
+        return ocgoApi.refresh().then((fresh) => { setView(fresh) }, () => {})
       }, () => {
         setBusy(false)
         setNotice({ kind: 'err', text: tRef.current('ocgo.saveFailed') })
@@ -147,9 +151,11 @@ export function OcgoSettingsSection(props: OcgoSettingsSectionProps): React.Reac
     ocgoApi.refresh().then((snapshot) => {
       setView(snapshot)
       setBusy(false)
-      setNotice(snapshot.error === undefined
-        ? { kind: 'ok', text: tRef.current('ocgo.testOk') }
-        : { kind: 'err', text: tRef.current('ocgo.error', { code: snapshot.error }) })
+      setNotice(snapshot.error !== undefined
+        ? { kind: 'err', text: tRef.current('ocgo.error', { code: snapshot.error }) }
+        : snapshot.stale === true
+          ? { kind: 'stale', text: tRef.current('ocgo.stale') }
+          : { kind: 'ok', text: tRef.current('ocgo.testOk') })
     }, () => {
       setBusy(false)
       setNotice({ kind: 'err', text: tRef.current('ocgo.error', { code: 'fetch' }) })
@@ -211,6 +217,9 @@ export function OcgoSettingsSection(props: OcgoSettingsSectionProps): React.Reac
         )}
         {view?.updatedAt !== undefined && (
           <p className={css.hint}>{t('ocgo.fetchedAt', { time: formatClock(view.updatedAt) })}</p>
+        )}
+        {view?.stale === true && (
+          <p className={css.staleHint} data-testid="ocgo-settings-stale">{t('ocgo.stale')}</p>
         )}
       </div>
 
@@ -276,7 +285,7 @@ export function OcgoSettingsSection(props: OcgoSettingsSectionProps): React.Reac
           </button>
           {notice !== null && (
             <span
-              className={notice.kind === 'ok' ? css.noticeOk : css.noticeErr}
+              className={notice.kind === 'ok' ? css.noticeOk : notice.kind === 'stale' ? css.staleHint : css.noticeErr}
               data-testid="ocgo-settings-notice"
             >
               {notice.text}

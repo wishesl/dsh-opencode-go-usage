@@ -118,6 +118,9 @@ function WindowSegment(props: { window: UsageWindow; sep: string; compact?: bool
 export function OcgoDockEntry(props: OcgoDockEntryProps): React.ReactElement | null {
   const [view, setView] = useState<OcgoUsageView | null>(null)
   const [answered, setAnswered] = useState(false)
+  // The last poll could not reach the host (timeout / transport failure): the
+  // previous round stays on screen, flagged, instead of blanking into an error.
+  const [unreachable, setUnreachable] = useState(false)
   const [open, setOpen] = useState(false)
   // Panel mode: 'view' = windows + footer; 'set' = API-key editor.
   const [mode, setMode] = useState<'view' | 'set'>('view')
@@ -148,10 +151,14 @@ export function OcgoDockEntry(props: OcgoDockEntryProps): React.ReactElement | n
     ocgoApi.view().then((snapshot) => {
       if (!live) return
       setView(snapshot)
+      setUnreachable(false)
       setAnswered(true)
     }, () => {
       if (!live) return
-      setView(null)
+      // One unreachable access is not a reason to throw away the last round:
+      // keep whatever is on screen and flag it as stale. Only a poll that has
+      // never succeeded falls through to the error chip below.
+      setUnreachable(true)
       setAnswered(true)
     })
     return () => { live = false }
@@ -243,8 +250,11 @@ export function OcgoDockEntry(props: OcgoDockEntryProps): React.ReactElement | n
   const refresh = (): void => {
     ocgoApi.refresh().then((snapshot) => {
       setView(snapshot)
+      setUnreachable(false)
     }, () => {
-      // Ignore transport errors on manual refresh; the next poll resyncs.
+      // Keep the previous round on screen instead of erroring out; the next
+      // poll resyncs once the host answers again.
+      setUnreachable(true)
     })
   }
 
@@ -306,6 +316,9 @@ export function OcgoDockEntry(props: OcgoDockEntryProps): React.ReactElement | n
 
   // TS: after the error early-return, `view` is a non-null success snapshot.
   const snapshot = view as OcgoUsageView
+  // Stale when the host already flagged its read as a surviving round, or when
+  // this browser could not reach it and is showing what the last round produced.
+  const stale = unreachable || snapshot.stale === true
   const windows: UsageWindow[] = [
     snapshot.rolling,
     snapshot.weekly,
@@ -328,12 +341,12 @@ export function OcgoDockEntry(props: OcgoDockEntryProps): React.ReactElement | n
   }
 
   return (
-    <span className={css.wrap} ref={wrapRef} data-testid="ocgo-chip">
+    <span className={css.wrap} ref={wrapRef} data-testid="ocgo-chip" data-stale={stale || undefined}>
       <button
         type="button"
         className={open ? `${css.chip} ${css.chipOpen}` : css.chip}
         onClick={() => { if (open) closePanel(); else setOpen(true) }}
-        title={open ? t('ocgo.collapse') : t('ocgo.expand')}
+        title={stale ? t('ocgo.stale') : (open ? t('ocgo.collapse') : t('ocgo.expand'))}
       >
         <OcgoLogo />
         {windows.map((w) => (
@@ -392,7 +405,10 @@ export function OcgoDockEntry(props: OcgoDockEntryProps): React.ReactElement | n
                     {t('ocgo.refresh')}
                   </button>
                   {snapshot.updatedAt !== undefined && (
-                    <span className={css.fetchedAt}>
+                    <span
+                      className={stale ? `${css.fetchedAt} ${css.fetchedStale}` : css.fetchedAt}
+                      title={stale ? t('ocgo.stale') : undefined}
+                    >
                       {t('ocgo.fetchedAt', { time: formatClock(snapshot.updatedAt) })}
                     </span>
                   )}

@@ -164,6 +164,21 @@
   opacity: 0.6;
 }
 
+/* The readout kept on screen after a timed-out / failed access: the timestamp
+   is flagged so a stale round never reads as a fresh one. */
+.fetchedStale {
+  color: var(--dsw-alias-state-warn-primary, #f59e0b);
+  opacity: 1;
+}
+
+/* Settings-page counterpart: one line under the numbers. */
+.staleHint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dsw-alias-state-warn-primary, #f59e0b);
+}
+
 .refreshBtn {
   border: 0;
   background: 0 0;
@@ -297,7 +312,7 @@
 }
 
 .input:focus {
-  border-color: var(--dsw-alias-brand-primary, #3964fe);
+  border-color: var(--dsw-alias-state-business-primary, #4176e6);
 }
 
 .hint {
@@ -315,15 +330,29 @@
   gap: 10px;
 }
 
+/* Filled action button. The pair is the design system's own:
+   `button-primary-fill` is #0f1115 on light and #f9fafb on dark, and
+   `label-primary-foreground` is the text colour that flips with it (#ffffff /
+   #0f1115). `brand-primary` must NOT be used as a fill: it resolves to a
+   near-white in dark mode, which rendered this label white-on-white. */
 .primary {
   height: 28px;
   padding: 0 14px;
   border: 0;
   border-radius: 6px;
-  background: var(--dsw-alias-brand-primary, #3964fe);
-  color: #ffffff;
+  background: var(--dsw-alias-button-primary-fill, #0f1115);
+  color: var(--dsw-alias-label-primary-foreground, #ffffff);
   font-size: 12px;
   cursor: pointer;
+}
+
+/* The design system's focus ring, painted by the component: the shared
+   `:focus-visible` rule supplies colour and width but never the style, so an
+   input that resets `outline` has to re-declare it. */
+.fieldInput:focus-visible,
+.input:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 1px;
 }
 
 .primary:disabled {
@@ -434,11 +463,13 @@
   cursor: default;
 }
 
-/* The selected mode: a brand-coloured border plus a left rule, so the choice
-   reads at a glance without relying on colour alone. */
+/* The selected mode: an accent-coloured border plus a left rule, so the choice
+   reads at a glance without relying on colour alone. `state-business-primary`
+   is the platform accent (#4176e6 light / #7aaaff dark); `brand-primary`
+   flips to near-white / near-black instead and stops reading as an accent. */
 .optionActive {
-  border-color: var(--dsw-alias-brand-primary, #3964fe);
-  box-shadow: inset 3px 0 0 var(--dsw-alias-brand-primary, #3964fe);
+  border-color: var(--dsw-alias-state-business-primary, #4176e6);
+  box-shadow: inset 3px 0 0 var(--dsw-alias-state-business-primary, #4176e6);
 }
 
 .optionLabel {
