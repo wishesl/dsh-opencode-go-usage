@@ -3,7 +3,7 @@
  * the short and full window labels, the compact duration formatter, the
  * fetch-time clock, and the severity→class ramp. Split out so both surfaces
  * format and colour the same numbers identically.
- * @module dsh-ocgo-usage/client/windows
+ * @module @sutong12/dsh-opencode-go-usage/client/windows
  */
 import type { UsageWindow, UsageWindowKind } from '../types.ts';
 import type { OcgoKey } from './locales.ts';

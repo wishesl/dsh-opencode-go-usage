@@ -1,5 +1,5 @@
 /**
- * dsh-ocgo-usage browser half — registers the OpenCode Go usage chip into
+ * @sutong12/dsh-opencode-go-usage browser half — registers the OpenCode Go usage chip into
  * the composer tool row (`conversation.input.right`, next to the model
  * selector) and reads the host's same-origin `/api/ocgo-usage` JSON endpoints:
  * poll the host snapshot (every 10 s),
@@ -19,7 +19,7 @@
  * This half also registers the settings page and claims the settings nav row
  * for it, whose glyph the shell would otherwise draw as its own gear
  * (./settings-nav-icon.ts).
- * @module dsh-ocgo-usage/client
+ * @module @sutong12/dsh-opencode-go-usage/client
  */
 
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
@@ -43,7 +43,7 @@ export type { OcgoDockEntryProps } from './OcgoDockEntry.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** dsh-ocgo-usage chip copy. */
+    /** @sutong12/dsh-opencode-go-usage chip copy. */
     ocgo: OcgoKey
   }
 }
@@ -90,7 +90,7 @@ function probeFor(lookup: ServiceLookup, sessionId: string): ProviderProbe {
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-ocgo-usage: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), '@sutong12/dsh-opencode-go-usage: dictionaries')
 
   // The settings page. It keeps the credential editor reachable outside the
   // composer chip — from any session, whatever model is selected.
@@ -140,6 +140,6 @@ export function apply(ctx: ClientContext): void {
         dockSessionId: sessionId,
         ...(sessionId === undefined ? {} : { provider: probeFor(lookup, sessionId) }),
       }),
-    }, OcgoDockEntry), 'dsh-ocgo-usage: chip registration')
+    }, OcgoDockEntry), '@sutong12/dsh-opencode-go-usage: chip registration')
   })
 }

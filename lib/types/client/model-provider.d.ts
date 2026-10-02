@@ -12,7 +12,7 @@
  * re-resolves the DSH client packages and drops the `SlotMap` augmentation this
  * package's own slots depend on. Every failure path answers "unknown", and
  * `chipVisible` treats unknown as visible.
- * @module dsh-ocgo-usage/client/model-provider
+ * @module @sutong12/dsh-opencode-go-usage/client/model-provider
  */
 /** The slice of a Cordis context this probe needs. */
 export interface ServiceLookup {

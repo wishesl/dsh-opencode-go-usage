@@ -2,7 +2,7 @@
  * The shared mark: one path set feeds the composer chip's two-tone glyph and
  * the settings nav row's single-colour mask, and the mask URL has to survive
  * being pasted into a stylesheet.
- * @module dsh-ocgo-usage/client/ocgo-mark.test
+ * @module @sutong12/dsh-opencode-go-usage/client/ocgo-mark.test
  */
 
 import { describe, expect, it } from 'vitest'

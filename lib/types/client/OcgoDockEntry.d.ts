@@ -15,7 +15,7 @@
  * in-memory selection through an RPC this plugin does not need — and when that
  * probe answers nothing the chip hid unconditionally, which is exactly what
  * happened on DSH 0.2.0.)
- * @module dsh-ocgo-usage/client/OcgoDockEntry
+ * @module @sutong12/dsh-opencode-go-usage/client/OcgoDockEntry
  */
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import { NS } from './locales.ts';

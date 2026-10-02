@@ -1,5 +1,5 @@
 /**
- * dsh-ocgo-usage host service — the cached OpenCode Go usage read.
+ * @sutong12/dsh-opencode-go-usage host service — the cached OpenCode Go usage read.
  *
  * Resolves the API key on every operation (so a changed key reaches the next
  * query without a plugin restart), fetches `GET {baseUrl}/usage`, and caches the
@@ -11,7 +11,7 @@
  * credentials seam answers — and that seam already layers the process
  * environment, the provider-managed store and `.env` files, so the key the
  * provider uses is found without being duplicated anywhere.
- * @module dsh-ocgo-usage/service
+ * @module @sutong12/dsh-opencode-go-usage/service
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'

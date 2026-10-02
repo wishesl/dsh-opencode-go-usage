@@ -2,7 +2,7 @@
  * Visibility-mode tests: the three settings options, their persistence, the pure
  * gate the composer chip applies to its own live model selection, and the mode
  * the Host reports in place of a verdict.
- * @module dsh-ocgo-usage/visibility.test
+ * @module @sutong12/dsh-opencode-go-usage/visibility.test
  */
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'

@@ -1,5 +1,5 @@
 /**
- * dsh-ocgo-usage browser half — registers the OpenCode Go usage chip into
+ * @sutong12/dsh-opencode-go-usage browser half — registers the OpenCode Go usage chip into
  * the composer tool row (`conversation.input.right`, next to the model
  * selector) and reads the host's same-origin `/api/ocgo-usage` JSON endpoints:
  * poll the host snapshot (every 10 s),
@@ -19,7 +19,7 @@
  * This half also registers the settings page and claims the settings nav row
  * for it, whose glyph the shell would otherwise draw as its own gear
  * (./settings-nav-icon.ts).
- * @module dsh-ocgo-usage/client
+ * @module @sutong12/dsh-opencode-go-usage/client
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client';
 import { type ProviderProbe } from './model-provider.ts';
@@ -29,7 +29,7 @@ export { OcgoDockEntry, formatDuration } from './OcgoDockEntry.tsx';
 export type { OcgoDockEntryProps } from './OcgoDockEntry.tsx';
 declare module '@deepseek-ai/dsh-client-ui-slots' {
     interface LocaleNamespaceMap {
-        /** dsh-ocgo-usage chip copy. */
+        /** @sutong12/dsh-opencode-go-usage chip copy. */
         ocgo: OcgoKey;
     }
 }

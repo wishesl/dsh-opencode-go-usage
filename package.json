@@ -1,5 +1,5 @@
 {
-  "name": "dsh-ocgo-usage",
+  "name": "@sutong12/dsh-opencode-go-usage",
   "description": "OpenCode Go subscription usage readout for the dsh web GUI: rolling (5h), weekly, and monthly usage windows with reset countdowns in the composer dock.",
   "version": "0.1.1",
   "type": "module",
@@ -40,6 +40,18 @@
     "cordis.patch.yml"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wishesl/dsh-opencode-go-usage.git"
+  },
+  "homepage": "https://github.com/wishesl/dsh-opencode-go-usage#readme",
+  "bugs": {
+    "url": "https://github.com/wishesl/dsh-opencode-go-usage/issues"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
   "keywords": [
     "dsh",
     "deepseek-harness",

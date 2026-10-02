@@ -2,7 +2,7 @@
  * Settings-nav glyph tests: the one decision (is this row mine?), the injected
  * stylesheet, and the install's whole lifecycle against a fake document — the
  * regression lock for claim / re-claim / hand-back, which no type can check.
- * @module dsh-ocgo-usage/client/settings-nav-icon.test
+ * @module @sutong12/dsh-opencode-go-usage/client/settings-nav-icon.test
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -237,8 +237,8 @@ describe('installSettingsNavIcon', () => {
     expect(fake.styles).toHaveLength(1)
     expect(fake.head.children).toHaveLength(1)
     const style = fake.styles[0]
-    expect(style.dataset['plugin']).toBe('dsh-ocgo-usage')
-    expect(style.dataset['pluginCss']).toBe('dsh-ocgo-usage/settings-nav-icon')
+    expect(style.dataset['plugin']).toBe('@sutong12/dsh-opencode-go-usage')
+    expect(style.dataset['pluginCss']).toBe('@sutong12/dsh-opencode-go-usage/settings-nav-icon')
     expect(style.textContent).toContain('data:image/svg+xml,')
     expect(style.textContent).toContain(`[${NAV_ICON_MARKER}] > svg { display: none; }`)
   })

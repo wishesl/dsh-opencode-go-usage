@@ -27,7 +27,7 @@
  *
  * Delete this module (and its call in index.ts) the day `settings.section`
  * grows an `icon` field.
- * @module dsh-ocgo-usage/client/settings-nav-icon
+ * @module @sutong12/dsh-opencode-go-usage/client/settings-nav-icon
  */
 /** Marks the one nav row this plugin owns. */
 export declare const NAV_ICON_MARKER = "data-ocgo-nav-icon";

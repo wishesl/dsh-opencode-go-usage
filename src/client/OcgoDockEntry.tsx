@@ -15,7 +15,7 @@
  * in-memory selection through an RPC this plugin does not need — and when that
  * probe answers nothing the chip hid unconditionally, which is exactly what
  * happened on DSH 0.2.0.)
- * @module dsh-ocgo-usage/client/OcgoDockEntry
+ * @module @sutong12/dsh-opencode-go-usage/client/OcgoDockEntry
  */
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'

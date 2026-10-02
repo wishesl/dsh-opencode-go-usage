@@ -1,5 +1,5 @@
 /**
- * HTTP fetch + response adapter for dsh-ocgo-usage.
+ * HTTP fetch + response adapter for @sutong12/dsh-opencode-go-usage.
  *
  * Source of truth: the OpenCode Go account statistics endpoint
  * `GET {baseUrl}/usage`, authenticated with `Authorization: Bearer <apiKey>` —
@@ -11,7 +11,7 @@
  * `/workspace/<wrk>/go`: the API needs no browser session, returns structured
  * data instead of locale-dependent HTML, and reports resets as instants rather
  * than as phrases that had to be parsed per language.
- * @module dsh-ocgo-usage/api
+ * @module @sutong12/dsh-opencode-go-usage/api
  */
 
 import type { NormalizedUsage, OcgoConfig, UsageWindow, UsageWindowKind, UsageStatus } from './types.ts'

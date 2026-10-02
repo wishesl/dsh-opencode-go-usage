@@ -11,7 +11,7 @@
  * `assets/ocgo-logo-dark.svg` (dark); the files stay as the source of truth for
  * review, while these strings are what the bundle can actually reach (a browser
  * half cannot fetch a file out of the plugin package).
- * @module dsh-ocgo-usage/client/ocgo-mark
+ * @module @sutong12/dsh-opencode-go-usage/client/ocgo-mark
  */
 
 /** The art box of the mark, as shipped. */

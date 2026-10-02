@@ -1,5 +1,5 @@
 /**
- * dsh-ocgo-usage host half — mounts the usage service and its HTTP routes.
+ * @sutong12/dsh-opencode-go-usage host half — mounts the usage service and its HTTP routes.
  *
  * Usage is read from the OpenCode Go JSON API (`GET {baseUrl}/usage`) with the
  * account API key, so the browser half never touches a session cookie. The key
@@ -10,7 +10,7 @@
  * The browser half (the `./client` entry) reads the three usage windows
  * (rolling 5h / weekly / monthly) through the same-origin
  * `/api/ocgo-usage` JSON endpoints.
- * @module dsh-ocgo-usage
+ * @module @sutong12/dsh-opencode-go-usage
  */
 
 import { Context } from '@deepseek-ai/cordis'

@@ -27,7 +27,7 @@
  *
  * Delete this module (and its call in index.ts) the day `settings.section`
  * grows an `icon` field.
- * @module dsh-ocgo-usage/client/settings-nav-icon
+ * @module @sutong12/dsh-opencode-go-usage/client/settings-nav-icon
  */
 
 import { ocgoMaskUrl } from './ocgo-mark.ts'
@@ -154,8 +154,8 @@ export function installSettingsNavIcon(ctx: NavIconContext, resolveLabel: () => 
 
   ctx.effect(() => {
     const tag = doc.createElement('style')
-    tag.dataset.plugin = 'dsh-ocgo-usage'
-    tag.dataset.pluginCss = 'dsh-ocgo-usage/settings-nav-icon'
+    tag.dataset.plugin = '@sutong12/dsh-opencode-go-usage'
+    tag.dataset.pluginCss = '@sutong12/dsh-opencode-go-usage/settings-nav-icon'
     tag.textContent = navIconCss(ocgoMaskUrl())
     doc.head.appendChild(tag)
 
@@ -195,5 +195,5 @@ export function installSettingsNavIcon(ctx: NavIconContext, resolveLabel: () => 
       }
       tag.remove()
     }
-  }, 'dsh-ocgo-usage: settings nav icon')
+  }, '@sutong12/dsh-opencode-go-usage: settings nav icon')
 }

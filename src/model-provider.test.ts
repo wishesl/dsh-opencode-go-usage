@@ -1,6 +1,6 @@
 /**
  * Unit tests for the live model-selection probe.
- * @module dsh-ocgo-usage/model-provider.test
+ * @module @sutong12/dsh-opencode-go-usage/model-provider.test
  */
 
 import { describe, expect, it, vi } from 'vitest'

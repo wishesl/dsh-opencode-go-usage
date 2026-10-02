@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-[![npm](https://img.shields.io/npm/v/dsh-ocgo-usage)](https://www.npmjs.com/package/dsh-ocgo-usage)
+[![npm](https://img.shields.io/npm/v/@sutong12/dsh-opencode-go-usage)](https://www.npmjs.com/package/@sutong12/dsh-opencode-go-usage)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
@@ -42,7 +42,7 @@ This package is a standard dsh **bundle**: it declares `dsh.bundle` in its manif
 ### From GitHub (recommended for users)
 
 ```sh
-dsh plugin --profile web add github:v587d/dsh-opencode-go-usage
+dsh plugin --profile web add github:wishesl/dsh-opencode-go-usage
 ```
 
 Because `lib/` is committed, pnpm installs the built package directly and never asks for a build-script allowance.
@@ -50,22 +50,22 @@ Because `lib/` is committed, pnpm installs the built package directly and never 
 ### From npm (after a release)
 
 ```sh
-dsh plugin --profile web add dsh-ocgo-usage
+dsh plugin --profile web add @sutong12/dsh-opencode-go-usage
 ```
 
-> **About the name:** the repo is `dsh-opencode-go-usage`, but that npm name is already taken by a similar third-party plugin, so the npm package publishes as `dsh-ocgo-usage`. GitHub installs (recommended) are unaffected: `dsh plugin --profile web add github:v587d/dsh-opencode-go-usage`.
+> **About the name:** both unscoped npm names — `dsh-opencode-go-usage` (yumusb) and `dsh-ocgo-usage` (v587d) — are already taken by similar third-party plugins, so this repo publishes under the `@sutong12` scope as `@sutong12/dsh-opencode-go-usage`. GitHub installs (recommended) are unaffected: `dsh plugin --profile web add github:wishesl/dsh-opencode-go-usage`.
 
 ### From a tarball
 
 ```sh
-pnpm pack            # in this repo → dsh-ocgo-usage-0.1.0.tgz
-dsh plugin --profile web add ./dsh-ocgo-usage-0.1.0.tgz
+pnpm pack            # in this repo → sutong12-dsh-opencode-go-usage-0.1.1.tgz
+dsh plugin --profile web add ./sutong12-dsh-opencode-go-usage-0.1.1.tgz
 ```
 
 ### From a local checkout (development)
 
 ```sh
-git clone https://github.com/v587d/dsh-opencode-go-usage.git
+git clone https://github.com/wishesl/dsh-opencode-go-usage.git
 cd dsh-opencode-go-usage
 pnpm install
 pnpm run build
@@ -75,7 +75,7 @@ dsh plugin --profile web add link:$(pwd)
 **Restart `dsh web`, then refresh the page.** The usage chip appears in the composer dock next to the conversation stats line. Verify the plugin layer is composed without booting:
 
 ```sh
-dsh --profile web --dump-config   # shows a "# == dsh-ocgo-usage" layer
+dsh --profile web --dump-config   # shows a "# == @sutong12/dsh-opencode-go-usage" layer
 ```
 
 ## Configuration

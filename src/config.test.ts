@@ -1,6 +1,6 @@
 /**
  * Unit tests for the configuration loader.
- * @module dsh-ocgo-usage/config.test
+ * @module @sutong12/dsh-opencode-go-usage/config.test
  */
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -49,7 +49,7 @@ describe('config', () => {
 
   beforeEach(() => {
     savedEnv = clearEnv()
-    tmp = mkdtempSync(join(tmpdir(), 'dsh-ocgo-usage-cfg-'))
+    tmp = mkdtempSync(join(tmpdir(), 'dsh-opencode-go-usage-cfg-'))
     process.env.DSH_HOME = tmp
   })
 

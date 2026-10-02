@@ -12,7 +12,7 @@
  * provider the key is normally found in the DSH credentials store with no
  * configuration at all, so the page reports which layer supplied it and only
  * writes an override when the user pastes one.
- * @module dsh-ocgo-usage/client/OcgoSettingsSection
+ * @module @sutong12/dsh-opencode-go-usage/client/OcgoSettingsSection
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'

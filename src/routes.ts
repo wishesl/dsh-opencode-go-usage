@@ -1,10 +1,10 @@
 /**
- * dsh-ocgo-usage HTTP routes — the browser half talks to the host through
+ * @sutong12/dsh-opencode-go-usage HTTP routes — the browser half talks to the host through
  * plain same-origin JSON endpoints (`/api/ocgo-usage`, `/api/ocgo-usage/refresh`
  * and the config editor `/api/ocgo-usage/config`), which the host answers from
  * the cached OpenCode Go usage read. The client never sees the API key — the
  * config editor serves only a masked tail and accepts a new value to write.
- * @module dsh-ocgo-usage/routes
+ * @module @sutong12/dsh-opencode-go-usage/routes
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'

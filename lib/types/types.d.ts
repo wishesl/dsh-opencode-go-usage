@@ -1,11 +1,11 @@
 /**
- * Shared types for dsh-ocgo-usage.
+ * Shared types for @sutong12/dsh-opencode-go-usage.
  *
  * Usage comes from the OpenCode Go JSON API — `GET {baseUrl}/usage` with the
  * account API key, the same endpoint dsh-opencode-go reads — so no browser
  * session cookie is involved anywhere: the Host resolves the key, calls the
  * endpoint and hands the browser percentages plus absolute reset instants.
- * @module dsh-ocgo-usage/types
+ * @module @sutong12/dsh-opencode-go-usage/types
  */
 /** One of the three OpenCode Go usage windows. */
 export type UsageWindowKind = 'rolling' | 'weekly' | 'monthly';

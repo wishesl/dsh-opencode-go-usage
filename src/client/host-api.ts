@@ -1,12 +1,12 @@
 /**
- * dsh-ocgo-usage host-API client — the same-origin JSON endpoints the browser
+ * @sutong12/dsh-opencode-go-usage host-API client — the same-origin JSON endpoints the browser
  * half reads and writes (`/api/ocgo-usage`, `/api/ocgo-usage/refresh` and the
  * credential editor `/api/ocgo-usage/config`). Shared by the composer chip and
  * the settings page so the wire contract has exactly one definition.
  *
  * The browser never sees the API key: the config endpoint answers with a masked
  * tail only, and accepts a new value to write host-side.
- * @module dsh-ocgo-usage/client/host-api
+ * @module @sutong12/dsh-opencode-go-usage/client/host-api
  */
 
 import type { ChipVisibility, MaskedConfigView, MaskedSecret, OcgoUsageView } from '../types.ts'

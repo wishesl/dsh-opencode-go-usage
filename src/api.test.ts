@@ -1,6 +1,6 @@
 /**
  * Unit tests for the usage API client (the JSON endpoint path).
- * @module dsh-ocgo-usage/api.test
+ * @module @sutong12/dsh-opencode-go-usage/api.test
  */
 
 import { describe, expect, it, vi } from 'vitest'

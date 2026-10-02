@@ -47,4 +47,4 @@ oc_locale=zh; desktop_promo_dismissed=1; auth=Fe26.2*...
 
 - 分支 `fix/cookie-parse` 即本修复的载体，后续改动直接在此分支上做，或从此分支 cherry-pick / rebase 到目标。
 - 已放弃的历史分支（`rebase-work` / `feat/cookie-robustness` / `pr-zh` / `pr2`）已删除；仅存的 `main` 与 `fix/cookie-parse`。
-- dsh 安装目录同步：`repo-tmp/lib` → `~/.dsh/profiles/web/node_modules/dsh-ocgo-usage/lib`（构建后覆盖）。
+- dsh 安装目录同步：`repo-tmp/lib` → `~/.dsh/profiles/web/node_modules/@sutong12/dsh-opencode-go-usage/lib`（构建后覆盖）。
