@@ -24,6 +24,7 @@ import type { MaskedConfigView, OcgoUsageView, UsageWindow } from '../types.ts'
 import { chipVisible } from '../provider.ts'
 import { onConfigChanged } from './config-bus.ts'
 import { NS } from './locales.ts'
+import { OCGO_MARK_DARK_BG, OCGO_MARK_INK, OCGO_MARK_PATHS, OCGO_MARK_VIEW_BOX } from './ocgo-mark.ts'
 import { maskedText, ocgoApi } from './host-api.ts'
 import type { ProviderProbe } from './model-provider.ts'
 import { formatClock, formatDuration, resetInSec, severityClass, WINDOW_LABELS, WINDOW_TITLE_KEYS } from './windows.ts'
@@ -71,26 +72,18 @@ function useDarkMode(): boolean {
   return dark
 }
 
-/** The official OpenCode Go logo mark, inlined to avoid extra asset requests. */
+/**
+ * The official OpenCode Go logo mark, inlined to avoid extra asset requests.
+ * The art itself lives in ./ocgo-mark.ts so the settings navigation row can
+ * draw the very same mark as its glyph.
+ */
 function OcgoLogo(): React.ReactElement {
   const dark = useDarkMode()
-  if (dark) {
-    return (
-      <svg className={css.logo} width="22" height="12" viewBox="0 0 54 30" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect width="100%" height="100%" fill="#2c2c2e" />
-        <path d="M24 30H0V0H24V6H6V24H18V18H12V12H24V30Z" fill="#e6edf3" />
-        <path d="M12 18H18V24H6V12H12V18Z" fill="#646464" />
-        <path d="M48 12V24H36V12H48Z" fill="#646464" />
-        <path d="M54 30H30V0H54V30ZM36 24H48V6H36V24Z" fill="#e6edf3" />
-      </svg>
-    )
-  }
+  const ink = dark ? OCGO_MARK_INK.dark : OCGO_MARK_INK.light
   return (
-    <svg className={css.logo} width="22" height="12" viewBox="0 0 54 30" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <path d="M24 30H0V0H24V6H6V24H18V18H12V12H24V30Z" fill="#211E1E" />
-      <path d="M12 18H18V24H6V12H12V18Z" fill="#CFCECD" />
-      <path d="M48 12V24H36V12H48Z" fill="#CFCECD" />
-      <path d="M54 30H30V0H54V30ZM36 24H48V6H36V24Z" fill="#211E1E" />
+    <svg className={css.logo} width="22" height="12" viewBox={OCGO_MARK_VIEW_BOX} fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      {dark && <rect width="100%" height="100%" fill={OCGO_MARK_DARK_BG} />}
+      {OCGO_MARK_PATHS.map((path) => <path key={path.d} d={path.d} fill={ink[path.tone]} />)}
     </svg>
   )
 }

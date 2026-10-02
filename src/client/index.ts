@@ -15,6 +15,10 @@
  * which is why visibility does not ride the usage endpoint. The chip renders
  * nothing while the current provider is not `opencode-go`, mirroring
  * pi-ocgo-usage.
+ *
+ * This half also registers the settings page and claims the settings nav row
+ * for it, whose glyph the shell would otherwise draw as its own gear
+ * (./settings-nav-icon.ts).
  * @module dsh-ocgo-usage/client
  */
 
@@ -29,6 +33,7 @@ import { OCGO_PROVIDER } from '../provider.ts'
 import { OcgoDockEntry, type OcgoDockEntryProps } from './OcgoDockEntry.tsx'
 import { OcgoSettingsSection, type OcgoSettingsSectionProps } from './OcgoSettingsSection.tsx'
 import { createProviderProbe, type ProviderProbe, type ServiceLookup } from './model-provider.ts'
+import { installSettingsNavIcon } from './settings-nav-icon.ts'
 import { en, zh, type OcgoKey } from './locales.ts'
 
 export { OCGO_PROVIDER } from '../provider.ts'
@@ -101,6 +106,11 @@ export function apply(ctx: ClientContext): void {
   // `slots.inject` waits for the declaration instead of depending on activation
   // order.
   const nav = ctx.locale.bind(NS)
+  // One label, two readers: the nav row the shell renders and the glyph this
+  // plugin claims onto it (./settings-nav-icon.ts). Independent thunks could
+  // drift apart on a dictionary edit and leave the glyph on someone else's row.
+  const sectionLabel = (): string => nav('ocgo.settingsNav')
+  installSettingsNavIcon(ctx, sectionLabel)
   const settingsSlots = ctx.slots as unknown as {
     inject: (key: string, callback: () => () => void) => () => void
     register: (
@@ -112,7 +122,7 @@ export function apply(ctx: ClientContext): void {
     name: 'settings.section',
     id: 'ocgo-usage',
     order: 25,
-    label: () => nav('ocgo.settingsNav'),
+    label: sectionLabel,
     locale: NS,
   }, OcgoSettingsSection))
 

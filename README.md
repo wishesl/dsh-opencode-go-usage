@@ -26,6 +26,7 @@ OpenCode Go: 5h 0% (1h 23m) · wk 65% (2d 20h) · mo 83% (6d 21h) · upd 20:15
 - **切换即时生效** —— 模式变更是本 bundle 内的直接通知；模型切换则由插件直接订阅模型选择器渲染用的那个 store（`modelDirectories` → `ModelDirectory.store`），**同步内存读取 + 变更通知**，都不必等下一次轮询。`provider` 档在探测不可用时 **fail-open**（照常显示），避免因探测失败而静默消失
 - **点击展开** —— 详情面板显示每个窗口的重置倒计时，左下角 `Set` 可编辑 API key，右侧 `refresh upd HH:MM` 手动刷新
 - **内置凭据编辑器** —— 无需碰终端：`Set` / 设置页直接填 API key（输入框以 `••••` + 末尾 4 位显示，点击外部 / Esc / 保存确认写入）
+- **设置导航自带图标** —— 设置面板左侧「OpenCode Go」那一行显示与输入框 chip 同一个 OCGo 标记（单色、随主题着色），不再是官方兜底的通用齿轮
 - **优雅降级** —— 配置缺失显示 `<err:noconfig>`，HTTP 失败显示 `<err:httpXXX>`；出错时点击 chip 直接进入 Set 面板
 - **API key 只在 host 侧** —— 浏览器只访问同源 `/api/ocgo-usage` JSON 端点，key 永不进入页面
 
@@ -147,7 +148,7 @@ chmod 600 ~/.dsh/ocgo-usage.json
 ## 工作原理
 
 - **Host 半**（`src/index.ts`、`src/service.ts`、`src/api.ts`、`src/routes.ts`）—— 按引用名从 DSH 凭据库解析 API key，带 `Authorization: Bearer` 请求 `GET {baseUrl}/usage`，把 `{usage:{rolling,weekly,monthly}}` 校验成 `{percent, resetsAt, status}`，缓存结果，通过同源 JSON 端点 `/api/ocgo-usage`（+ `/api/ocgo-usage/refresh`、`/api/ocgo-usage/config`）提供数据。
-- **浏览器半**（`src/client/`）—— 向 `conversation.input.right` slot 注册 chip，每 10s 轮询 host 端点取数，按严重级别着色渲染三个窗口；显示与否 = host 下发的模式 + **本会话实时的模型选择**（直接读模型选择器渲染用的 `modelDirectories` store 并订阅其变更，所以切模型即时反映，不等轮询）。
+- **浏览器半**（`src/client/`）—— 向 `conversation.input.right` slot 注册 chip，每 10s 轮询 host 端点取数，按严重级别着色渲染三个窗口；显示与否 = host 下发的模式 + **本会话实时的模型选择**（直接读模型选择器渲染用的 `modelDirectories` store 并订阅其变更，所以切模型即时反映，不等轮询）。另注册「设置 → OpenCode Go 用量」页，并认领设置导航里自己那一行的图标（官方无图标位，见 Changelog v2.2.2）。
 
 浏览器永远看不到 API key；解析与请求全部在 host 侧完成。
 
@@ -173,6 +174,15 @@ pnpm test          # vitest run（解析器 / 配置 / 服务）
 MIT —— 见 [LICENSE](./LICENSE)。
 
 ## Changelog
+
+### v2.2.2 - 设置导航显示 OCGo 标记
+
+设置面板左侧导航里「OpenCode Go」那一行现在显示与输入框 chip 同一个 OCGo 标记，不再是官方兜底的通用齿轮。
+
+- 官方**没有**图标位：`settings.section` 的注册项只有 `id` / `order` / `label`，导航图标由设置外壳按 section id 硬编码（`account` / `models` / `agent-presets` / `plugins` / `archived-sessions`），其余一律齿轮。所以本插件按行文本认领自己那一行（`data-ocgo-nav-icon` + 注入一段自有 CSS 隐藏官方 `<svg>`、用 mask 画自己的图形）——与 `dshmarket` 同款做法
+- 单色 `currentColor` 着色，深浅主题自动跟随；16px 槽位与官方图标一致，行高与标签位置不变
+- 只在「文本等于本插件的 section label」**且**该行带直接子 `<svg>`（官方图标位）时才认领；命中为 0 时官方齿轮照旧，不报错。插件卸载/禁用后标记与样式一并摘除，DOM 复原
+- 标记图形与 chip 共用同一份路径数据（`src/client/ocgo-mark.ts`）；官方哪天给 `settings.section` 加上 `icon` 字段，删掉 `src/client/settings-nav-icon.ts` 及其调用即可
 
 ### v2.1.0 - 改用 API key 直接读用量
 

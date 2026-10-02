@@ -15,6 +15,10 @@
  * which is why visibility does not ride the usage endpoint. The chip renders
  * nothing while the current provider is not `opencode-go`, mirroring
  * pi-ocgo-usage.
+ *
+ * This half also registers the settings page and claims the settings nav row
+ * for it, whose glyph the shell would otherwise draw as its own gear
+ * (./settings-nav-icon.ts).
  * @module dsh-ocgo-usage/client
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client';
